@@ -51,7 +51,11 @@ import {
 import { MemoryPipelineManager } from "../utils/pipeline-manager.js";
 import { CheckpointManager } from "../utils/checkpoint.js";
 import { SessionFilter } from "../utils/session-filter.js";
-import { StandaloneLLMRunner, StandaloneLLMRunnerFactory } from "../adapters/standalone/llm-runner.js";
+import {
+  StandaloneLLMRunner,
+  StandaloneLLMRunnerFactory,
+  type StandaloneLLMConfig,
+} from "../adapters/standalone/llm-runner.js";
 import { resolveStandaloneLlmForRuntime } from "../adapters/standalone/llm-provider-resolver.js";
 import { MetricTrackingRunnerFactory } from "./report/metric-tracking-runner.js";
 
@@ -625,16 +629,10 @@ export class TdaiCore {
    * provider=openai 时透传；provider=proxy 时替换 baseUrl 为 `${baseUrl}/proxy/<iid>/v1`，
    * apiKey 用 env.TDAI_MEMORY_SYSTEM_USER_KEY。四个 runner factory 构造点共用。
    */
-  private resolveRuntimeLlm(): {
-    baseUrl: string;
-    apiKey: string;
-    model: string;
-    maxTokens: number;
-    timeoutMs: number;
-    stream: boolean;
-  } {
+  private resolveRuntimeLlm(): StandaloneLLMConfig {
     const resolved = resolveStandaloneLlmForRuntime(this.cfg.llm, this.instanceId);
     return {
+      ...resolved,
       baseUrl: resolved.baseUrl,
       apiKey: resolved.apiKey,
       model: resolved.model,
@@ -1002,14 +1000,7 @@ export class TdaiCore {
     // which the runner honors over its own setting (see standalone/llm-runner.ts).
     const runtimeLlm = this.resolveRuntimeLlm();
     const runner = new StandaloneLLMRunner({
-      config: {
-        baseUrl: runtimeLlm.baseUrl,
-        apiKey: runtimeLlm.apiKey,
-        model: runtimeLlm.model,
-        maxTokens: runtimeLlm.maxTokens,
-        timeoutMs: runtimeLlm.timeoutMs,
-        stream: runtimeLlm.stream,
-      },
+      config: runtimeLlm,
       // Default to enabled so the runner doesn't strip caller-provided tools.
       enableTools: true,
       logger,

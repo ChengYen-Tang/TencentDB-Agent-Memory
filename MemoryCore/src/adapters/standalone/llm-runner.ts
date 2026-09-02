@@ -21,6 +21,7 @@ import path from "node:path";
 import { generateText, streamText, tool, stepCountIs, jsonSchema } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { report } from "../../core/report/reporter.js";
+import type { LlmReasoningEffort } from "../../utils/llm-reasoning.js";
 import type {
   LLMRunner,
   LLMRunParams,
@@ -88,6 +89,11 @@ export interface StandaloneLLMConfig {
   maxTokens?: number;
   /** Request timeout in milliseconds (default: 120_000). */
   timeoutMs?: number;
+  /**
+   * Optional reasoning budget for supported OpenAI-compatible Chat
+   * Completions models. Sent upstream as `reasoning_effort`.
+   */
+  reasoningEffort?: LlmReasoningEffort;
   /**
    * LLM 访问模式（gateway 层解释；runner 拿到的是已解析后的 baseUrl/apiKey）：
    *   - "openai": 直连通用 OpenAI 兼容服务（默认，向后兼容）
@@ -347,6 +353,13 @@ export class StandaloneLLMRunner implements LLMRunner {
           ? { tools, stopWhen: stepCountIs(maxIterations) }
           : {}),
         maxOutputTokens: maxTokens,
+        ...(this.config.reasoningEffort
+          ? {
+              providerOptions: {
+                openai: { reasoningEffort: this.config.reasoningEffort },
+              },
+            }
+          : {}),
         abortSignal: combinedSignal,
         experimental_telemetry: {
           isEnabled: true,

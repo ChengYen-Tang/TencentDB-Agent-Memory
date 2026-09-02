@@ -151,6 +151,7 @@
           "model": { "type": "string", "default": "gpt-4o", "description": "模型名称（如 gpt-4o, deepseek-v3, claude-sonnet-4-6）" },
           "maxTokens": { "type": "number", "default": 4096, "description": "最大输出 token 数" },
           "timeoutMs": { "type": "number", "default": 120000, "description": "请求超时（毫秒）" },
+          "reasoningEffort": { "type": "string", "enum": ["none", "minimal", "low", "medium", "high", "xhigh", "max"], "description": "推理模型的推理强度；仅支持该参数的 OpenAI-compatible Chat Completions 上游生效" },
           "stream": { "type": "boolean", "default": false, "description": "是否用流式请求(streamText)调用上游。默认 false(非流式)。个别只接受流式请求的 OpenAI 兼容上游需置 true。⚠️ 仅在启用独立 LLM(llm.enabled=true)时生效；未启用时走 OpenClaw host runner，此开关被忽略。" }
         }
       },

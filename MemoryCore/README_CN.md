@@ -275,6 +275,7 @@ Gateway 按以下优先级加载配置：
 | `TDAI_LLM_API_KEY` | 空 | LLM API Key |
 | `TDAI_LLM_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API 地址 |
 | `TDAI_LLM_MODEL` | `gpt-4o` | LLM 模型 |
+| `TDAI_LLM_REASONING_EFFORT` | 未设置 | 可选推理强度：`none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`（取决于模型） |
 | `TDAI_SKILL_ENABLED` | 配置文件值 | 强制启用 Skill 模块 |
 
 配置模板：

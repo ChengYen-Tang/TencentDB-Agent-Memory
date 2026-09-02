@@ -135,6 +135,7 @@ llm:                         # LLM API (OpenAI 兼容)
   baseUrl: "https://api.lkeap.cloud.tencent.com/v1"
   apiKey: "${TDAI_LLM_API_KEY}"
   model: "deepseek-v3.2"
+  # reasoningEffort: "medium" # 可选：none | minimal | low | medium | high | xhigh | max
 
 redis:                       # Redis (service 模式必需)
   host: "redis:6379"
@@ -169,6 +170,7 @@ memory:                      # 记忆引擎调参
 | `TDAI_LLM_API_KEY` | `llm.apiKey` | — | LLM API Key |
 | `TDAI_LLM_BASE_URL` | `llm.baseUrl` | `https://api.openai.com/v1` | LLM 地址 |
 | `TDAI_LLM_MODEL` | `llm.model` | `gpt-4o` | 模型名 |
+| `TDAI_LLM_REASONING_EFFORT` | `llm.reasoningEffort` | — | 可选推理强度；仅支持的模型生效 |
 | `REDIS_HOST` | `redis.host` | `127.0.0.1` | Redis 地址 |
 | `REDIS_PORT` | `redis.port` | `6379` | Redis 端口 |
 | `REDIS_PASSWORD` | `redis.password` | — | Redis 密码 |

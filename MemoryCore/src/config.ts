@@ -7,6 +7,11 @@
  * Minimal config (zero config): {} — all fields have sensible defaults.
  */
 
+import {
+  parseLlmReasoningEffort,
+  type LlmReasoningEffort,
+} from "./utils/llm-reasoning.js";
+
 // ============================
 // Type definitions
 // ============================
@@ -212,6 +217,8 @@ export interface StandaloneLLMOverrideConfig {
   maxTokens: number;
   /** Request timeout in milliseconds (default: 120000). */
   timeoutMs: number;
+  /** Optional reasoning budget for supported OpenAI-compatible models. */
+  reasoningEffort?: LlmReasoningEffort;
   /**
    * LLM 访问模式：
    *   - "openai": 直连 OpenAI 兼容服务（默认）
@@ -648,6 +655,10 @@ export function parseConfig(raw: Record<string, unknown> | undefined): MemoryTda
         model: str(llmGroup, "model") ?? "gpt-4o",
         maxTokens: num(llmGroup, "maxTokens") ?? 4096,
         timeoutMs: num(llmGroup, "timeoutMs") ?? 120_000,
+        reasoningEffort: parseLlmReasoningEffort(
+          str(llmGroup, "reasoningEffort"),
+          "llm.reasoningEffort",
+        ),
         provider,
         stream: bool(llmGroup, "stream") ?? false,
         proxy: {

@@ -1567,6 +1567,7 @@ export class TdaiGateway {
         ["model", this.config.llm.model],
         ["maxTokens", this.config.llm.maxTokens],
         ["timeoutMs", this.config.llm.timeoutMs],
+        ["reasoningEffort", this.config.llm.reasoningEffort],
       ]),
     };
     if (body.config_override) {
@@ -1997,6 +1998,7 @@ export class TdaiGateway {
         apiKey: effective.apiKey,
         model: effective.model ?? "default",
         timeoutMs: effective.timeoutMs ?? 120_000,
+        reasoningEffort: effective.reasoningEffort,
         stream: effective.stream ?? false,
       },
     });
@@ -2990,6 +2992,7 @@ export class TdaiGateway {
               messages: params.messages,
               temperature: params.temperature,
               max_tokens: params.max_tokens,
+              reasoning_effort: effective.reasoningEffort,
             }),
             signal: controller.signal,
           });

@@ -12,6 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 import YAML from "yaml";
 import { getEnv } from "../utils/env.js";
+import { parseLlmReasoningEffort } from "../utils/llm-reasoning.js";
 import { parseConfig as parseMemoryConfig } from "../config.js";
 import type { MemoryTdaiConfig } from "../config.js";
 import type { StandaloneLLMConfig } from "../adapters/standalone/llm-runner.js";
@@ -453,6 +454,10 @@ export function loadGatewayConfig(overrides?: Partial<GatewayConfig>): GatewayCo
     model: env("TDAI_LLM_MODEL") ?? str(llmConfig, "model") ?? "gpt-4o",
     maxTokens: envInt("TDAI_LLM_MAX_TOKENS") ?? num(llmConfig, "maxTokens") ?? 4096,
     timeoutMs: envInt("TDAI_LLM_TIMEOUT_MS") ?? num(llmConfig, "timeoutMs") ?? 120_000,
+    reasoningEffort: parseLlmReasoningEffort(
+      env("TDAI_LLM_REASONING_EFFORT") ?? str(llmConfig, "reasoningEffort"),
+      "TDAI_LLM_REASONING_EFFORT / llm.reasoningEffort",
+    ),
     provider: llmProvider,
     proxy: {
       useMemorySystemUserKey: bool(llmProxyConfig, "useMemorySystemUserKey") ?? true,
@@ -494,6 +499,7 @@ export function loadGatewayConfig(overrides?: Partial<GatewayConfig>): GatewayCo
       model: llm.model,
       maxTokens: llm.maxTokens ?? 4096,
       timeoutMs: llm.timeoutMs ?? 120_000,
+      reasoningEffort: llm.reasoningEffort,
       provider: llm.provider,
       proxy: {
         useMemorySystemUserKey: llm.proxy?.useMemorySystemUserKey ?? true,

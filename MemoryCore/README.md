@@ -207,6 +207,7 @@ Environment variables override file configuration. Common settings:
 | `TDAI_LLM_API_KEY` | Empty | LLM API key |
 | `TDAI_LLM_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API URL |
 | `TDAI_LLM_MODEL` | `gpt-4o` | LLM model |
+| `TDAI_LLM_REASONING_EFFORT` | Unset | Optional reasoning effort: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` (model-dependent) |
 | `TDAI_SKILL_ENABLED` | File configuration | Force-enable the Skill module |
 
 Configuration templates:
