@@ -15,8 +15,6 @@ services:
       context: ./MemoryCore
       dockerfile: Dockerfile
     image: ${TDAI_CORE_IMAGE:-tencentdb-agent-memory:local}
-    ports:
-      - "${TDAI_GATEWAY_BIND_ADDRESS:-127.0.0.1}:${TDAI_GATEWAY_HOST_PORT:-8420}:8420"
     environment:
       TDAI_GATEWAY_HOST: "0.0.0.0"
       TDAI_GATEWAY_CONFIG: /data/config/tdai-gateway.yaml
@@ -42,13 +40,13 @@ services:
       dockerfile: Dockerfile
     image: ${TDAI_KNOWLEDGE_IMAGE:-team-knowledge:local}
     ports:
-      - "${TDAI_KNOWLEDGE_BIND_ADDRESS:-127.0.0.1}:${TDAI_KNOWLEDGE_HOST_PORT:-8421}:8421"
+      - "${TDAI_KNOWLEDGE_HOST_PORT:-8421}:8421"
     environment:
       KNOWLEDGE_DATA_DIR: /app/data
       KNOWLEDGE_DB_PATH: /app/data/knowledge.db
       # This URL is handed to Codex in its knowledge-tool recipes, so it must
       # be reachable from every Codex machine and must include /v3.
-      KNOWLEDGE_PUBLIC_BASE_URL: "${TDAI_KNOWLEDGE_EXTERNAL_URL:-http://127.0.0.1:8421/v3}"
+      KNOWLEDGE_PUBLIC_BASE_URL: "${TDAI_KNOWLEDGE_EXTERNAL_URL:-http://172.30.1.251:8421/v3}"
       # The callback stays on the private Docker network.
       TMC_CALLBACK_URL: "http://memory-panel:8123"
       LLM_MODE: custom
@@ -80,11 +78,11 @@ services:
       memory-knowledge:
         condition: service_healthy
     ports:
-      - "${TDAI_PROXY_BIND_ADDRESS:-127.0.0.1}:${TDAI_PROXY_HOST_PORT:-8096}:8096"
+      - "${TDAI_PROXY_HOST_PORT:-8317}:8096"
     environment:
       CODEX_LLM_BASE_URL: "${CODEX_LLM_BASE_URL:?Set CODEX_LLM_BASE_URL in .env}"
       CODEX_LLM_API_KEY: "${CODEX_LLM_API_KEY:?Set CODEX_LLM_API_KEY in .env}"
-      TDAI_PROXY_EXTERNAL_URL: "${TDAI_PROXY_EXTERNAL_URL:-http://127.0.0.1:8096}"
+      TDAI_PROXY_EXTERNAL_URL: "${TDAI_PROXY_EXTERNAL_URL:-http://172.30.1.251:8317}"
       TDAI_GATEWAY_API_KEY: "${TDAI_GATEWAY_API_KEY:?Set TDAI_GATEWAY_API_KEY in .env}"
       TDAI_SERVICE_ID: "${TDAI_SERVICE_ID:-default}"
     volumes:
@@ -103,7 +101,7 @@ services:
       memory-knowledge:
         condition: service_healthy
     ports:
-      - "${TDAI_PANEL_BIND_ADDRESS:-127.0.0.1}:${TDAI_PANEL_HOST_PORT:-8123}:8123"
+      - "${TDAI_PANEL_HOST_PORT:-8123}:8123"
     environment:
       HOST: "0.0.0.0"
       PORT: "8123"
@@ -119,7 +117,7 @@ services:
       TDAI_SERVICE_ID: "${TDAI_SERVICE_ID:-default}"
       TDAI_PANEL_INSTANCE_NAME: "${TDAI_PANEL_INSTANCE_NAME:-TDAI Memory}"
       TDAI_PANEL_GATEWAY_ENDPOINT: "http://tdai-gateway:8420"
-      TDAI_PANEL_PROXY_ENDPOINT: "${TDAI_PROXY_EXTERNAL_URL:-http://127.0.0.1:8096}"
+      TDAI_PANEL_PROXY_ENDPOINT: "${TDAI_PROXY_EXTERNAL_URL:-http://172.30.1.251:8317}"
     entrypoint: ["/bin/sh", "/app/docker/compose-entrypoint.sh"]
     restart: unless-stopped
 

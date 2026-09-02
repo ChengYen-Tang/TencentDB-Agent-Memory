@@ -88,10 +88,8 @@ docker compose up --build -d
 ```
 
 该命令会启动四个服务：MemoryCore Gateway、Codex Memory Proxy、MemoryKnowledge
-（Wiki / Code Graph / Knowledge Map）及 MemoryPanel 管理界面。浏览器访问
-`http://<部署主机>:8123`；默认仅绑定部署主机回环地址，远程使用时请通过 HTTPS 反向代理，或在受信任的内网将
-`TDAI_PANEL_BIND_ADDRESS` 设为 `0.0.0.0`。Panel 通过 Docker 内网访问
-`tdai-gateway:8420` 与 `memory-knowledge:8421`，不会要求公开 Gateway 的 8420 端口。
+（Wiki / Code Graph / Knowledge Map）及 MemoryPanel 管理界面。已按 Linux 主机 `172.30.1.251` 设为对外可访问：
+Proxy `:8317`、Panel `:8123`、Knowledge `:8421`。Gateway `:8420` 只留在 Docker 内网，不会发布到主机。
 
 两条路径是物理隔离的：
 
@@ -112,9 +110,9 @@ Proxy 则向 Codex 注入 Skill 的搜索和读取能力。Skill 使用本地 SQ
 
 Wiki 会使用与 MemoryCore 相同的 `TDAI_INTERNAL_LLM_*` 帐号与模型将文件整理成页面、全文索引和 Knowledge Map；
 Code Graph 则只做 Git 仓库的静态索引，不会消耗 LLM 或 embedding 额度。两者建立后会由 Proxy 注入给 Codex 的
-Knowledge 工具。若 Codex 跑在另一台机器，请将 `TDAI_KNOWLEDGE_BIND_ADDRESS` 设为 `0.0.0.0`（或使用 HTTPS 反代），
-并将 `TDAI_KNOWLEDGE_EXTERNAL_URL` 设为所有 Codex 可访问、且包含 `/v3` 的 URL，例如
-`http://<Linux-LAN-IP>:8421/v3`。`TDAI_KNOWLEDGE_AUTO_SYNC_ENABLED` 默认关闭；开启后会定期 fetch 已注册的仓库。
+Knowledge 工具。三個對外端口已直接绑定 `0.0.0.0`；若改用 HTTPS 反代或主機 IP 改變，再以
+`TDAI_PROXY_EXTERNAL_URL` 與 `TDAI_KNOWLEDGE_EXTERNAL_URL` 覆寫即可。Code Graph 定期同步默认关闭，需要时可设
+`TDAI_KNOWLEDGE_AUTO_SYNC_ENABLED=true`。
 
 Codex 端仍须使用自己的记忆身份 key（`sk-mem-*`），它与上游 LLM key 不同：
 
