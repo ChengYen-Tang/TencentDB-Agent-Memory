@@ -78,11 +78,18 @@ docker run -d --name agent-memory \
   tencentdb-agent-memory:latest
 ```
 
-**Docker Compose 一键启动（含 Redis）：**
+**Docker Compose 一键启动（Standalone，无 Redis/Shark/TCVDB/COS 外部依赖）：**
 
 ```bash
-TDAI_LLM_API_KEY=sk-your-key docker compose -f docker-compose.local.yaml up --build
+cd MemoryCore
+cp .env.example .env
+# 编辑 .env，至少填写 TDAI_LLM_API_KEY
+docker compose -f docker-compose.local.yaml up --build -d
 ```
+
+默认仅发布到 `127.0.0.1:8420`。确实需要让局域网或公网访问时，设置
+`TDAI_GATEWAY_BIND_ADDRESS=0.0.0.0`，并同时设置强随机的
+`TDAI_GATEWAY_API_KEY`。
 
 ### 4. 验证服务
 
@@ -254,7 +261,7 @@ volumes:
 .
 ├── MemoryCore/
 │   ├── Dockerfile                       # 镜像构建
-│   ├── docker-compose.local.yaml        # 本地一键测试 (含 Redis)
+│   ├── docker-compose.local.yaml        # Standalone 本地一键启动（零外部依赖）
 │   ├── tdai-gateway.standalone.yaml     # Standalone 配置模板
 │   ├── tdai-gateway.service.yaml        # Service 配置模板
 │   ├── tdai-gateway.real.yaml           # 本地测试配置 (连真实服务)
