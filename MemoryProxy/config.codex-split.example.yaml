@@ -66,6 +66,17 @@ skill:
   serviceToken: "${TDAI_GATEWAY_API_KEY:-}"
   serviceId: "${TDAI_SERVICE_ID:-default}"
   timeoutMs: 5000
+
+# Knowledge metadata lives in MemoryCore. The resource's public service_url
+# points at MemoryKnowledge (:8421), where Codex then runs Wiki / Code Graph
+# tools directly.
+knowledge:
+  enabled: true
+  endpoint: "http://tdai-gateway:8420"
+  serviceToken: "${TDAI_GATEWAY_API_KEY:-}"
+  serviceId: "${TDAI_SERVICE_ID:-default}"
+  timeoutMs: 5000
+
 auth:
   enabled: true
   url: "http://tdai-gateway:8420"
@@ -82,7 +93,7 @@ injection:
   # This URL is embedded in the curl recipes that Codex executes on the host,
   # so it must be reachable from the Codex machine rather than from Docker.
   externalGatewayUrl: "${TDAI_PROXY_EXTERNAL_URL:-http://127.0.0.1:8096}"
-  injectors: ["tdai-memory", "skill"]
+  injectors: ["tdai-memory", "skill", "knowledge"]
 
 # Automatic extraction in MemoryCore creates and updates skills. Keep direct
 # Skill writes by the main Codex model off unless you explicitly want it to

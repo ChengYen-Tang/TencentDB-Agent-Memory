@@ -87,22 +87,34 @@ cp .env.example .env
 docker compose up --build -d
 ```
 
+该命令会启动四个服务：MemoryCore Gateway、Codex Memory Proxy、MemoryKnowledge
+（Wiki / Code Graph / Knowledge Map）及 MemoryPanel 管理界面。浏览器访问
+`http://<部署主机>:8123`；默认仅绑定部署主机回环地址，远程使用时请通过 HTTPS 反向代理，或在受信任的内网将
+`TDAI_PANEL_BIND_ADDRESS` 设为 `0.0.0.0`。Panel 通过 Docker 内网访问
+`tdai-gateway:8420` 与 `memory-knowledge:8421`，不会要求公开 Gateway 的 8420 端口。
+
 两条路径是物理隔离的：
 
 | 路径 | 凭证与模型配置 | 用途 |
 | --- | --- | --- |
-| `tdai-gateway` → LLM | `TDAI_INTERNAL_LLM_*` | L1/L2/L3 记忆抽取、总结等内部任务；可设置 `TDAI_INTERNAL_LLM_REASONING_EFFORT` |
+| `tdai-gateway` / `memory-knowledge` → LLM | `TDAI_INTERNAL_LLM_*` | L1/L2/L3 记忆抽取、总结与 Wiki 文件整理等内部任务；Gateway 可设置 `TDAI_INTERNAL_LLM_REASONING_EFFORT` |
 | Codex → `memory-proxy` → LLM | `CODEX_LLM_BASE_URL` / `CODEX_LLM_API_KEY` | 用户在 Codex 发出的 Responses API 请求；由 Codex 自身选择模型与推理强度 |
 
-`CODEX_LLM_API_KEY` 只会传给 Proxy 容器，`TDAI_INTERNAL_LLM_API_KEY` 只会传给
-Gateway 容器。`TDAI_GATEWAY_API_KEY` 则只是这两个容器之间调用 MemoryCore API 的
-内部凭据，不是任何一家 LLM 的 API key。
+`CODEX_LLM_API_KEY` 只会传给 Proxy 容器；`TDAI_INTERNAL_LLM_API_KEY` 会传给
+Gateway 与 MemoryKnowledge 两个内部容器，不会进入 Proxy。`TDAI_GATEWAY_API_KEY` 则只是内部容器
+调用 MemoryCore API 的凭据，不是任何一家 LLM 的 API key。
 
 Compose 默认也会启用 Skill：Core 会以内部 LLM 从归档对话提炼可复用的工作流程，
 Proxy 则向 Codex 注入 Skill 的搜索和读取能力。Skill 使用本地 SQLite / 文件存储和
 单 worker；主 Codex 模型默认只能读取 Skill，不能在普通对话中直接修改共享 Skill。
 `TDAI_PROXY_EXTERNAL_URL` 是注入给 Codex Bash 工具的本机 Proxy 地址，默认
 `http://127.0.0.1:8096`；若 Codex 在另一台机器运行，改为其可访问的反向代理地址。
+
+Wiki 会使用与 MemoryCore 相同的 `TDAI_INTERNAL_LLM_*` 帐号与模型将文件整理成页面、全文索引和 Knowledge Map；
+Code Graph 则只做 Git 仓库的静态索引，不会消耗 LLM 或 embedding 额度。两者建立后会由 Proxy 注入给 Codex 的
+Knowledge 工具。若 Codex 跑在另一台机器，请将 `TDAI_KNOWLEDGE_BIND_ADDRESS` 设为 `0.0.0.0`（或使用 HTTPS 反代），
+并将 `TDAI_KNOWLEDGE_EXTERNAL_URL` 设为所有 Codex 可访问、且包含 `/v3` 的 URL，例如
+`http://<Linux-LAN-IP>:8421/v3`。`TDAI_KNOWLEDGE_AUTO_SYNC_ENABLED` 默认关闭；开启后会定期 fetch 已注册的仓库。
 
 Codex 端仍须使用自己的记忆身份 key（`sk-mem-*`），它与上游 LLM key 不同：
 
