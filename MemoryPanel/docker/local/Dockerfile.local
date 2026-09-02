@@ -20,16 +20,25 @@
 # ──────────────────────────────────────────────────────────────────────
 ARG PANEL_UI=web
 
-# ── base：node:22-slim + 腾讯云 apt 镜像 + 原生编译工具链 ──────────────
+# ── base：node:22-slim + 原生编译工具链 ──────────────────────────────
 FROM node:22-slim AS base
 
-RUN sed -i 's|deb.debian.org|mirrors.tencent.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
-    sed -i 's|deb.debian.org|mirrors.tencent.com|g' /etc/apt/sources.list 2>/dev/null || true
+# Use Debian's public mirror by default. The former hard-coded Tencent mirror
+# is not universally reachable and can make ordinary LAN deployments fail at
+# `apt-get update`. An operator can still opt into a nearby mirror at build
+# time with `--build-arg APT_MIRROR=<host>`.
+ARG APT_MIRROR=deb.debian.org
+RUN if [ "$APT_MIRROR" != "deb.debian.org" ]; then \
+      sed -i "s|deb.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
+      sed -i "s|deb.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list 2>/dev/null || true; \
+    fi
 
 # better-sqlite3 原生编译 + git（可选）+ curl（healthcheck）
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get update -o Acquire::Retries=3 && \
+    apt-get install -y -o Acquire::Retries=3 --no-install-recommends \
       python3 make g++ git curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
