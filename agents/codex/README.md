@@ -35,6 +35,36 @@ stream_idle_timeout_ms = 120000
 - `disable_response_storage = true` — 关闭本地缓存，确保每轮都经过 Proxy 注入
 - `stream_idle_timeout_ms = 120000` — session-init 等待用户操作时避免被超时
 
+### 与 MemoryCore 分开的上游 LLM 账户
+
+`experimental_bearer_token` 是 MemoryCore 的 `sk-mem-*` **身份 key**，不是 Codex
+上游 LLM 的 API key。Proxy 收到请求后会以 `upstream.agents.codex.apiKey` 覆盖它，
+所以可让两条链路独立计费：
+
+```yaml
+# MemoryCore：内部记忆抽取/总结，直连它自己的上游
+TDAI_INTERNAL_LLM_API_KEY: <internal-provider-key>
+TDAI_INTERNAL_LLM_MODEL: <internal-model>
+
+# MemoryProxy：只处理 /codex/<spaceId>/...，使用 Codex 专用上游账户
+upstream:
+  agents:
+    codex:
+      url: "${CODEX_LLM_BASE_URL}"
+      apiKey: "${CODEX_LLM_API_KEY}"
+```
+
+仓库根的 `docker-compose.yml` 已将这两组变量分别注入不同容器；复制
+`.env.example` 为 `.env` 后执行：
+
+```bash
+docker compose up --build -d
+```
+
+Codex 的 `model` 与 `model_reasoning_effort` 仍由本机 `~/.codex/config.toml` 选择；
+MemoryCore 的内部推理强度则使用 `TDAI_INTERNAL_LLM_REASONING_EFFORT`。两边可使用
+不同模型，只要各自的上游账户有该模型权限。
+
 > ⚠️ **首次对话前必须切到 Plan 模式**（`Shift+Tab`）。Codex 默认 Agent 模式会自动执行 tool call 跳过用户选择，导致 session-init 永远完不成。选完 Team→Agent→Task 后再切回 Agent 模式。
 
 请求路径：

@@ -5,6 +5,8 @@
  * - Every call goes directly to the auth service (no caching)
  * - Returns structured result to allow caller to reject invalid keys
  * - x-tdai-service-id is derived from the request path's spaceId (not config)
+ * - auth.serviceToken optionally authenticates the proxy to MemoryCore's
+ *   gateway-level Bearer gate; it is never the client's user key
  * - Configurable via YAML `auth` section
  */
 
@@ -73,12 +75,17 @@ export async function verifyUserKey(userKey: string, serviceId: string): Promise
   if (!userKey) return { userId: "", rejected: true, rejectReason: "missing user_key" };
 
   try {
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      "x-tdai-service-id": serviceId,
+    };
+    if (config.serviceToken) {
+      headers.authorization = `Bearer ${config.serviceToken}`;
+    }
+
     const fetchOpts: RequestInit = {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-tdai-service-id": serviceId,
-      },
+      headers,
       body: JSON.stringify({ user_key: userKey }),
     };
     if (config.timeoutMs > 0) {

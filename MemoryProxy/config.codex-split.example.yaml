@@ -1,0 +1,85 @@
+# Local Codex + MemoryCore setup with two independent LLM billing routes.
+#
+# - MemoryCore's own extraction / summarisation LLM is configured in the
+#   tdai-gateway container with TDAI_INTERNAL_LLM_* variables.
+# - Codex requests enter this proxy at /codex/<spaceId>/... and use only
+#   CODEX_LLM_* below. The Codex client's sk-mem-* key is an identity key;
+#   it is replaced before forwarding and is never billed by the LLM provider.
+#
+# `${VAR}` and `${VAR:-default}` values are expanded from the proxy container
+# environment at startup. Copy this file to config.yaml for a non-Docker setup.
+
+server:
+  host: 0.0.0.0
+  port: 8096
+  forwardTimeoutMs: 600000
+
+upstream:
+  # Safe default for this Codex-only proxy. It prevents an unrecognised route
+  # from ever using MemoryCore's internal provider credential.
+  url: "${CODEX_LLM_BASE_URL}"
+  apiKey: "${CODEX_LLM_API_KEY}"
+  agents:
+    # Explicitly pin the /codex/<spaceId>/responses route to its own provider
+    # account. `apiKey` replaces Codex's inbound sk-mem-* identity key.
+    codex:
+      url: "${CODEX_LLM_BASE_URL}"
+      apiKey: "${CODEX_LLM_API_KEY}"
+
+log:
+  file: ""
+  level: info
+  backend: console
+
+# Persist session-init state locally; Redis is not required for this single
+# proxy instance.
+redis:
+  enabled: false
+storage:
+  enabled: true
+  backend: sqlite
+  sqlite:
+    dbPath: "/data/tdai-memory-proxy/proxy.db"
+
+# MemoryCore connection. This token is an internal Gateway credential, not an
+# LLM provider API key. In docker-compose.yml it is shared only by the
+# two local containers.
+tdai:
+  enabled: true
+  endpoint: "http://tdai-gateway:8420"
+  apiKey: "${TDAI_GATEWAY_API_KEY:-}"
+  serviceId: "${TDAI_SERVICE_ID:-default}"
+  memory:
+    enabled: true
+    inject: true
+    writeL0: true
+    recallL1: true
+    injectL2L3: true
+    l1Limit: 5
+    l2Limit: 3
+    timeoutMs: 5000
+
+# Session-init uses the metadata API. `serviceToken` authenticates the proxy to
+# the Gateway, while each Codex client provides its own sk-mem-* identity key.
+skill:
+  endpoint: "http://tdai-gateway:8420"
+  serviceToken: "${TDAI_GATEWAY_API_KEY:-}"
+  serviceId: "${TDAI_SERVICE_ID:-default}"
+  timeoutMs: 5000
+auth:
+  enabled: true
+  url: "http://tdai-gateway:8420"
+  serviceToken: "${TDAI_GATEWAY_API_KEY:-}"
+  timeoutMs: 5000
+sessionInit:
+  enabled: true
+  maxRetries: 3
+  injectAgentContext: true
+  injectTaskContext: true
+
+injection:
+  enabled: true
+  injectors: ["tdai-memory"]
+extraction:
+  enabled: true
+  extractors: ["tdai-memory"]

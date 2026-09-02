@@ -1,0 +1,58 @@
+# One-command local deployment for MemoryCore + MemoryProxy + Codex.
+#
+# 1. Copy .env.example to .env and fill the values.
+# 2. docker compose up --build -d
+#
+# The TDAI internal credential is intentionally not passed to memory-proxy;
+# the Codex credential is intentionally not passed to tdai-gateway.
+
+name: tdai-codex-memory
+
+services:
+  tdai-gateway:
+    build:
+      context: ./MemoryCore
+      dockerfile: Dockerfile
+    image: ${TDAI_CORE_IMAGE:-tencentdb-agent-memory:local}
+    ports:
+      - "${TDAI_GATEWAY_BIND_ADDRESS:-127.0.0.1}:${TDAI_GATEWAY_HOST_PORT:-8420}:8420"
+    environment:
+      TDAI_GATEWAY_HOST: "0.0.0.0"
+      TDAI_GATEWAY_CONFIG: /data/config/tdai-gateway.yaml
+      TDAI_DATA_DIR: /data/tdai-memory
+      TDAI_GATEWAY_API_KEY: "${TDAI_GATEWAY_API_KEY:?Set TDAI_GATEWAY_API_KEY in .env}"
+      TDAI_LLM_PROVIDER: openai
+      TDAI_LLM_BASE_URL: "${TDAI_INTERNAL_LLM_BASE_URL:?Set TDAI_INTERNAL_LLM_BASE_URL in .env}"
+      TDAI_LLM_API_KEY: "${TDAI_INTERNAL_LLM_API_KEY:?Set TDAI_INTERNAL_LLM_API_KEY in .env}"
+      TDAI_LLM_MODEL: "${TDAI_INTERNAL_LLM_MODEL:-gpt-4o}"
+      TDAI_LLM_MAX_TOKENS: "${TDAI_INTERNAL_LLM_MAX_TOKENS:-4096}"
+      TDAI_LLM_TIMEOUT_MS: "${TDAI_INTERNAL_LLM_TIMEOUT_MS:-120000}"
+      TDAI_LLM_REASONING_EFFORT: "${TDAI_INTERNAL_LLM_REASONING_EFFORT:-}"
+    volumes:
+      - ./MemoryCore/tdai-gateway.standalone.yaml:/data/config/tdai-gateway.yaml:ro
+      - tdai-memory-data:/data/tdai-memory
+    restart: unless-stopped
+
+  memory-proxy:
+    build:
+      context: ./MemoryProxy
+      dockerfile: Dockerfile
+    image: ${TDAI_PROXY_IMAGE:-tencentdb-memory-proxy:local}
+    depends_on:
+      tdai-gateway:
+        condition: service_healthy
+    ports:
+      - "${TDAI_PROXY_BIND_ADDRESS:-127.0.0.1}:${TDAI_PROXY_HOST_PORT:-8096}:8096"
+    environment:
+      CODEX_LLM_BASE_URL: "${CODEX_LLM_BASE_URL:?Set CODEX_LLM_BASE_URL in .env}"
+      CODEX_LLM_API_KEY: "${CODEX_LLM_API_KEY:?Set CODEX_LLM_API_KEY in .env}"
+      TDAI_GATEWAY_API_KEY: "${TDAI_GATEWAY_API_KEY:?Set TDAI_GATEWAY_API_KEY in .env}"
+      TDAI_SERVICE_ID: "${TDAI_SERVICE_ID:-default}"
+    volumes:
+      - ./MemoryProxy/config.codex-split.example.yaml:/data/config.yaml:ro
+      - tdai-proxy-data:/data/tdai-memory-proxy
+    restart: unless-stopped
+
+volumes:
+  tdai-memory-data:
+  tdai-proxy-data:

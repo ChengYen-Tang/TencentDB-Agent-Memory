@@ -375,6 +375,7 @@ clickhouse:
 auth:
   enabled: true            # 是否启用鉴权
   url: "http://kernel.example.com:8420"   # 内核鉴权服务 base URL（自动拼接 /v3/meta/auth/verify）
+  # serviceToken: "${TDAI_GATEWAY_API_KEY:-}"  # 内核 Gateway Bearer；不是客户端的 sk-mem user_key
   timeoutMs: 5000          # 鉴权请求超时（毫秒）
 
 

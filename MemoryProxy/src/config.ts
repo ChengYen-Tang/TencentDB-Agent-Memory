@@ -139,6 +139,7 @@ export const DEFAULT_CONFIG: ProxyConfig = {
   auth: {
     enabled: false,
     url: "",
+    serviceToken: "",
     timeoutMs: 5000,
   },
   systemUsers: [],
@@ -161,11 +162,12 @@ export function loadYamlConfig(filePath: string): RawYamlConfig {
       );
       return {};
     }
+    const expanded = expandEnvValues(parsed);
     // eslint-disable-next-line no-console
     console.log(
       `[config] loaded ${filePath} (top-level sections: ${Object.keys(parsed as object).join(",")})`,
     );
-    return parsed as RawYamlConfig;
+    return expanded as RawYamlConfig;
   } catch (err: unknown) {
     const e = err as NodeJS.ErrnoException;
     if (e.code === "ENOENT") {
@@ -473,6 +475,7 @@ export function buildConfig(overrides: CliOverrides = {}): ProxyConfig {
     auth: {
       enabled: yaml.auth?.enabled ?? DEFAULT_CONFIG.auth.enabled,
       url: yaml.auth?.url ?? DEFAULT_CONFIG.auth.url,
+      serviceToken: yaml.auth?.serviceToken ?? DEFAULT_CONFIG.auth.serviceToken,
       timeoutMs: yaml.auth?.timeoutMs ?? DEFAULT_CONFIG.auth.timeoutMs,
     },
     // Entries without a non-empty userId are silently dropped — matching is
@@ -542,9 +545,9 @@ export function buildConfig(overrides: CliOverrides = {}): ProxyConfig {
  * Expand `${VAR}` / `${VAR:-default}` references in a string using
  * `process.env`. Missing vars with no default become an empty string.
  *
- * Deliberately scoped narrowly (only called from `systemUsers` today) to
- * avoid changing the semantics of other fields where a literal `${...}`
- * might already be in use (regex-adjacent config, prompts, etc).
+ * Values are expanded while loading YAML configuration so credentials can be
+ * injected from a container environment instead of being committed. A literal
+ * `${...}` in a YAML value is therefore reserved for environment expansion.
  */
 function expandEnv(input: string): string {
   return input.replace(/\$\{([A-Z_][A-Z0-9_]*)(?::-([^}]*))?\}/gi, (_m, name: string, def?: string) => {
@@ -552,6 +555,21 @@ function expandEnv(input: string): string {
     if (val !== undefined && val !== "") return val;
     return def ?? "";
   });
+}
+
+/** Recursively expand environment references in YAML string leaves. */
+function expandEnvValues(value: unknown): unknown {
+  if (typeof value === "string") return expandEnv(value);
+  if (Array.isArray(value)) return value.map(expandEnvValues);
+  if (!value || typeof value !== "object") return value;
+
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return value;
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .map(([key, nested]) => [key, expandEnvValues(nested)]),
+  );
 }
 
 /** Parse process.argv into CliOverrides (minimal arg parser, no extra deps). */

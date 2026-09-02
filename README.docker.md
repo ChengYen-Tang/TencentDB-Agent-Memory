@@ -78,18 +78,45 @@ docker run -d --name agent-memory \
   tencentdb-agent-memory:latest
 ```
 
-**Docker Compose 一键启动（Standalone，无 Redis/Shark/TCVDB/COS 外部依赖）：**
+### Docker Compose 一键启动
 
 ```bash
-cd MemoryCore
+cd TencentDB-Agent-Memory
 cp .env.example .env
-# 编辑 .env，至少填写 TDAI_LLM_API_KEY
-docker compose -f docker-compose.local.yaml up --build -d
+# 编辑 .env，填写两组 LLM 与 TDAI_GATEWAY_API_KEY
+docker compose up --build -d
 ```
 
-默认仅发布到 `127.0.0.1:8420`。确实需要让局域网或公网访问时，设置
-`TDAI_GATEWAY_BIND_ADDRESS=0.0.0.0`，并同时设置强随机的
-`TDAI_GATEWAY_API_KEY`。
+两条路径是物理隔离的：
+
+| 路径 | 凭证与模型配置 | 用途 |
+| --- | --- | --- |
+| `tdai-gateway` → LLM | `TDAI_INTERNAL_LLM_*` | L1/L2/L3 记忆抽取、总结等内部任务；可设置 `TDAI_INTERNAL_LLM_REASONING_EFFORT` |
+| Codex → `memory-proxy` → LLM | `CODEX_LLM_BASE_URL` / `CODEX_LLM_API_KEY` | 用户在 Codex 发出的 Responses API 请求；由 Codex 自身选择模型与推理强度 |
+
+`CODEX_LLM_API_KEY` 只会传给 Proxy 容器，`TDAI_INTERNAL_LLM_API_KEY` 只会传给
+Gateway 容器。`TDAI_GATEWAY_API_KEY` 则只是这两个容器之间调用 MemoryCore API 的
+内部凭据，不是任何一家 LLM 的 API key。
+
+Codex 端仍须使用自己的记忆身份 key（`sk-mem-*`），它与上游 LLM key 不同：
+
+```toml
+# ~/.codex/config.toml
+model_provider = "tdai-proxy"
+model = "<CODEX_LLM_API_KEY 账户可用的模型>"
+model_reasoning_effort = "high"
+
+[model_providers.tdai-proxy]
+name = "TDAI Memory Proxy"
+wire_api = "responses"
+base_url = "http://127.0.0.1:8096/codex/default"
+experimental_bearer_token = "sk-mem-<你的使用者身份 key>"
+```
+
+Proxy 会验证这个 `sk-mem-*` 身份 key，并在向上游转发前用
+`CODEX_LLM_API_KEY` 覆盖它。因此两个账户的用量与计费不会混在一起。Codex 的
+上游必须支持 OpenAI Responses API；若上游只提供 Chat Completions，不能直接用于
+这条 Codex 路由。
 
 ### 4. 验证服务
 
@@ -261,7 +288,6 @@ volumes:
 .
 ├── MemoryCore/
 │   ├── Dockerfile                       # 镜像构建
-│   ├── docker-compose.local.yaml        # Standalone 本地一键启动（零外部依赖）
 │   ├── tdai-gateway.standalone.yaml     # Standalone 配置模板
 │   ├── tdai-gateway.service.yaml        # Service 配置模板
 │   ├── tdai-gateway.real.yaml           # 本地测试配置 (连真实服务)

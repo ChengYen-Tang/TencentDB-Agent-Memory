@@ -643,6 +643,12 @@ export interface AuthConfig {
   enabled: boolean;
   /** Auth service base URL (e.g. http://kernel.example.com:8420). */
   url: string;
+  /**
+   * Optional Bearer token for the auth service itself. This is distinct from
+   * the caller's `sk-mem-*` user key, which remains in the verify request
+   * body. Set this when MemoryCore's gateway-level auth is enabled.
+   */
+  serviceToken?: string;
   /** Request timeout in ms. Default: 5000. */
   timeoutMs: number;
 }
@@ -871,6 +877,7 @@ export interface RawYamlConfig {
   auth?: {
     enabled?: boolean;
     url?: string;
+    serviceToken?: string;
     timeoutMs?: number;
   };
   systemUsers?: Partial<SystemUserEntry>[];
