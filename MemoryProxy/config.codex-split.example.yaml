@@ -79,7 +79,17 @@ sessionInit:
 
 injection:
   enabled: true
-  injectors: ["tdai-memory"]
+  # This URL is embedded in the curl recipes that Codex executes on the host,
+  # so it must be reachable from the Codex machine rather than from Docker.
+  externalGatewayUrl: "${TDAI_PROXY_EXTERNAL_URL:-http://127.0.0.1:8096}"
+  injectors: ["tdai-memory", "skill"]
+
+# Automatic extraction in MemoryCore creates and updates skills. Keep direct
+# Skill writes by the main Codex model off unless you explicitly want it to
+# create, modify, or delete shared skills during ordinary work.
+skillRuntime:
+  allowLlmWrite: false
+
 extraction:
   enabled: true
-  extractors: ["tdai-memory"]
+  extractors: ["tdai-memory", "skill"]

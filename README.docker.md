@@ -98,6 +98,12 @@ docker compose up --build -d
 Gateway 容器。`TDAI_GATEWAY_API_KEY` 则只是这两个容器之间调用 MemoryCore API 的
 内部凭据，不是任何一家 LLM 的 API key。
 
+Compose 默认也会启用 Skill：Core 会以内部 LLM 从归档对话提炼可复用的工作流程，
+Proxy 则向 Codex 注入 Skill 的搜索和读取能力。Skill 使用本地 SQLite / 文件存储和
+单 worker；主 Codex 模型默认只能读取 Skill，不能在普通对话中直接修改共享 Skill。
+`TDAI_PROXY_EXTERNAL_URL` 是注入给 Codex Bash 工具的本机 Proxy 地址，默认
+`http://127.0.0.1:8096`；若 Codex 在另一台机器运行，改为其可访问的反向代理地址。
+
 Codex 端仍须使用自己的记忆身份 key（`sk-mem-*`），它与上游 LLM key 不同：
 
 ```toml

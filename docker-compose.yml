@@ -46,6 +46,7 @@ services:
     environment:
       CODEX_LLM_BASE_URL: "${CODEX_LLM_BASE_URL:?Set CODEX_LLM_BASE_URL in .env}"
       CODEX_LLM_API_KEY: "${CODEX_LLM_API_KEY:?Set CODEX_LLM_API_KEY in .env}"
+      TDAI_PROXY_EXTERNAL_URL: "${TDAI_PROXY_EXTERNAL_URL:-http://127.0.0.1:8096}"
       TDAI_GATEWAY_API_KEY: "${TDAI_GATEWAY_API_KEY:?Set TDAI_GATEWAY_API_KEY in .env}"
       TDAI_SERVICE_ID: "${TDAI_SERVICE_ID:-default}"
     volumes:

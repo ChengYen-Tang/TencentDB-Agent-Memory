@@ -83,18 +83,21 @@ memory:
     enabled: true
     language: "zh"
 
-# ── Skill 模块（可选，默认关闭）──
-# Skill 是额外能力的加入，不影响上面的 Memory 引擎。
-# 启用后 skill 数据存储在 {baseDir}/skills/ 目录下。
-# 也可通过环境变量 TDAI_SKILL_ENABLED=true 启用。
-# skill:
-#   enabled: true
-#   routing:
-#     mode: "bm25"
-#     searchTopK: 20        # listing 接口最多注入多少条 skill（name+description）
-#   extraction:
-#     enabled: true         # 需要 llm 配置有效
-#     maxIterations: 16
-#   resources:
-#     maxResourceSizeBytes: 5000000
-#     allowExecutable: false
+# ── Skill 模块（本机 Compose 默认开启）──
+# Skill 会从已归档的对话中提炼可复用的工作流程，并提供给 Agent 搜索和读取。
+# 独立于上面的 Memory 引擎；本机数据保存在 {baseDir}/skills/。
+skill:
+  enabled: true
+  storeBackend: "sqlite"
+  contentBackend: "local"
+  routing:
+    mode: "bm25"
+    searchTopK: 20        # listing 接口最多提供多少条 skill（name + description）
+  extraction:
+    enabled: true         # 使用上方配置的内部 LLM 进行自动提炼
+    maxIterations: 16
+  resources:
+    maxResourceSizeBytes: 5000000
+    allowExecutable: false
+  worker:
+    concurrency: 1        # 单机模式避免默认的高并发 worker 池

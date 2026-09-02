@@ -65,6 +65,10 @@ Codex 的 `model` 与 `model_reasoning_effort` 仍由本机 `~/.codex/config.tom
 MemoryCore 的内部推理强度则使用 `TDAI_INTERNAL_LLM_REASONING_EFFORT`。两边可使用
 不同模型，只要各自的上游账户有该模型权限。
 
+根目录的 Compose 默认启用 Skill 自动提炼：MemoryCore 会从归档对话整理可复用流程，
+Codex 可通过 Proxy 搜索和读取它们。主模型默认没有直接修改 Skill 的权限；这样可避免
+一般对话意外改动共享流程。
+
 > ⚠️ **首次对话前必须切到 Plan 模式**（`Shift+Tab`）。Codex 默认 Agent 模式会自动执行 tool call 跳过用户选择，导致 session-init 永远完不成。选完 Team→Agent→Task 后再切回 Agent 模式。
 
 请求路径：
