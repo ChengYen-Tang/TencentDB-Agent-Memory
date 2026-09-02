@@ -12,6 +12,7 @@
 import { generateText, streamText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import type { LlmReasoningEffort } from "../../../config.js";
 import { createLogger } from "../../../logger.js";
 
 const log = createLogger("wiki-ingest-llm");
@@ -28,6 +29,8 @@ export interface RawLlmConfig {
   // INTERFACE 文档别名
   baseUrl?: string;
   maxTokens?: number;
+  /** Optional reasoning budget for supported OpenAI-compatible models. */
+  reasoningEffort?: LlmReasoningEffort;
   timeoutMs?: number;
   /**
    * 是否用流式请求(streamText)调用上游。默认 false(非流式)。
@@ -47,6 +50,7 @@ export interface NormalizedLlmConfig {
   apiKey: string;
   model: string;
   maxTokens: number;
+  reasoningEffort?: LlmReasoningEffort;
   timeoutMs: number;
   stream: boolean;
 }
@@ -69,9 +73,10 @@ export function normalizeLlmConfig(raw: RawLlmConfig | undefined): NormalizedLlm
   const apiKey = cfg.apiKey || "";
   const model = cfg.model || DEFAULT_MODEL;
   const maxTokens = cfg.maxTokens ?? cfg.maxContextSize ?? DEFAULT_MAX_TOKENS;
+  const reasoningEffort = cfg.reasoningEffort;
   const timeoutMs = cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const stream = cfg.stream ?? false;
-  return { protocol, baseUrl, apiKey, model, maxTokens, timeoutMs, stream };
+  return { protocol, baseUrl, apiKey, model, maxTokens, reasoningEffort, timeoutMs, stream };
 }
 
 export interface ChatParams {
@@ -144,6 +149,9 @@ export function createLlmClient(raw: RawLlmConfig | undefined): LlmClient {
           prompt: params.prompt,
           maxOutputTokens: params.maxOutputTokens ?? config.maxTokens,
           ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
+          ...(config.protocol === "openai" && config.reasoningEffort
+            ? { providerOptions: { openai: { reasoningEffort: config.reasoningEffort } } }
+            : {}),
           abortSignal: signal,
           experimental_telemetry: {
             isEnabled: true,

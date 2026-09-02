@@ -129,7 +129,7 @@ function trimTrailingSlash(url: string): string {
 
 /**
  * Pure resolver: turn a binding (or its absence) into an effective LlmConfig.
- * maxTokens/timeoutMs/provider/mode always inherit from the fallback; the binding
+ * maxTokens/reasoningEffort/timeoutMs/provider/mode always inherit from the fallback; the binding
  * only overrides endpoint/key.
  *
  * Model always comes from `fallback.model` (= global `LLM_MODEL` env) — no
@@ -166,6 +166,7 @@ export function resolveLlmConfig(
       model: fallback.model,
       baseUrl: `${trimTrailingSlash(binding.proxy_base_url)}/proxy/${serviceId}/v1`,
       maxTokens: fallback.maxTokens,
+      reasoningEffort: fallback.reasoningEffort,
       timeoutMs: fallback.timeoutMs,
       stream: fallback.stream,
     };
@@ -181,6 +182,7 @@ export function resolveLlmConfig(
     model: fallback.model,
     baseUrl: binding.base_url,
     maxTokens: fallback.maxTokens,
+    reasoningEffort: fallback.reasoningEffort,
     timeoutMs: fallback.timeoutMs,
     stream: fallback.stream,
   };

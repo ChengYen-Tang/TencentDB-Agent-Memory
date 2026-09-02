@@ -191,6 +191,7 @@ export function createKnowledgeModule(config: KnowledgeModuleConfig): KnowledgeM
         model: effectiveLlm.model,
         customEndpoint: effectiveLlm.baseUrl,
         maxContextSize: effectiveLlm.maxTokens,
+        reasoningEffort: effectiveLlm.reasoningEffort,
         timeoutMs: effectiveLlm.timeoutMs,
         stream: effectiveLlm.stream ?? false,
       },

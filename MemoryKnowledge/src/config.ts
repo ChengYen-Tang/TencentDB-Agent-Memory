@@ -34,6 +34,11 @@ export interface LlmConfig {
   model: string;
   baseUrl: string;
   maxTokens: number;
+  /**
+   * Optional reasoning budget for supported OpenAI-compatible models.
+   * Passed to Wiki ingestion calls as `reasoning_effort`.
+   */
+  reasoningEffort?: LlmReasoningEffort;
   /** LLM request timeout in ms. Defaults to 1200000 (20min) — reasoning 模型需要更长时间。 */
   timeoutMs: number;
   /**
@@ -41,6 +46,31 @@ export interface LlmConfig {
    * 个别只接受流式请求的兼容上游需置 true。per-instance binding 不覆盖此字段(部署级开关)。
    */
   stream?: boolean;
+}
+
+/** Reasoning effort values supported by the OpenAI-compatible Wiki client. */
+export const LLM_REASONING_EFFORTS = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const;
+
+export type LlmReasoningEffort = (typeof LLM_REASONING_EFFORTS)[number];
+
+function parseLlmReasoningEffort(value: string | undefined): LlmReasoningEffort | undefined {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return undefined;
+  if ((LLM_REASONING_EFFORTS as readonly string[]).includes(normalized)) {
+    return normalized as LlmReasoningEffort;
+  }
+  throw new Error(
+    `LLM_REASONING_EFFORT must be one of: ${LLM_REASONING_EFFORTS.join(", ")}. ` +
+    "Support is model-dependent.",
+  );
 }
 
 export interface ClickHouseTelemetryConfig {
@@ -168,6 +198,7 @@ export function loadConfig(): ServiceConfig {
       model: env("LLM_MODEL", "Memory-Model"),
       baseUrl: env("LLM_BASE_URL", ""),
       maxTokens: envInt("LLM_MAX_TOKENS", 32768),
+      reasoningEffort: parseLlmReasoningEffort(env("LLM_REASONING_EFFORT", "")),
       timeoutMs: envInt("LLM_TIMEOUT_MS", 1200000),
       stream: process.env.LLM_STREAM === "true",
     },
