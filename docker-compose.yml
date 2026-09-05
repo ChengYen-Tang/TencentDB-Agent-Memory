@@ -24,7 +24,6 @@ services:
       TDAI_LLM_BASE_URL: "${TDAI_INTERNAL_LLM_BASE_URL:?Set TDAI_INTERNAL_LLM_BASE_URL in .env}"
       TDAI_LLM_API_KEY: "${TDAI_INTERNAL_LLM_API_KEY:?Set TDAI_INTERNAL_LLM_API_KEY in .env}"
       TDAI_LLM_MODEL: "${TDAI_INTERNAL_LLM_MODEL:-gpt-4o}"
-      TDAI_LLM_MAX_TOKENS: "${TDAI_INTERNAL_LLM_MAX_TOKENS:-4096}"
       TDAI_LLM_TIMEOUT_MS: "${TDAI_INTERNAL_LLM_TIMEOUT_MS:-120000}"
       TDAI_LLM_REASONING_EFFORT: "${TDAI_INTERNAL_LLM_REASONING_EFFORT:-}"
     volumes:
@@ -54,7 +53,9 @@ services:
       LLM_API_KEY: "${TDAI_INTERNAL_LLM_API_KEY:?Set TDAI_INTERNAL_LLM_API_KEY in .env}"
       LLM_BASE_URL: "${TDAI_INTERNAL_LLM_BASE_URL:?Set TDAI_INTERNAL_LLM_BASE_URL in .env}"
       LLM_MODEL: "${TDAI_INTERNAL_LLM_MODEL:-gpt-4o}"
-      LLM_MAX_TOKENS: "${TDAI_KNOWLEDGE_LLM_MAX_TOKENS:-8192}"
+      # The canonical maxTokens source is the same Gateway YAML used by
+      # tdai-gateway. MemoryKnowledge reads llm.maxTokens from this mount.
+      TDAI_SHARED_LLM_CONFIG: /app/tdai-gateway.shared.yaml
       # Wiki is an internal TDAI workload, so it deliberately shares the same
       # optional reasoning budget as MemoryCore rather than Codex's account.
       LLM_REASONING_EFFORT: "${TDAI_INTERNAL_LLM_REASONING_EFFORT:-}"
@@ -68,6 +69,7 @@ services:
       KNOWLEDGE_AUTO_SYNC_MAX_CONCURRENT: "${TDAI_KNOWLEDGE_AUTO_SYNC_MAX_CONCURRENT:-3}"
     volumes:
       - tdai-knowledge-data:/app/data
+      - ./MemoryCore/tdai-gateway.standalone.yaml:/app/tdai-gateway.shared.yaml:ro
     restart: unless-stopped
 
   memory-proxy:

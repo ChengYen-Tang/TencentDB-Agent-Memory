@@ -5,8 +5,10 @@
  * All config is loaded from env vars with sensible defaults.
  * LLM config can also be passed explicitly to createKnowledgeModule.
  */
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import 'dotenv/config';
+import { parse as parseYaml } from "yaml";
 
 /** Expand leading ~/ to the user's home directory. */
 function expandHome(filepath: string): string {
@@ -119,6 +121,40 @@ function envInt(key: string, fallback: number): number {
   return Number.isNaN(n) ? fallback : n;
 }
 
+/** Read llm.maxTokens from the Gateway YAML mounted by the root Compose file. */
+function sharedGatewayMaxTokens(): number | undefined {
+  const configPath = process.env.TDAI_SHARED_LLM_CONFIG?.trim();
+  if (!configPath) return undefined;
+
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(readFileSync(configPath, "utf8"));
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Unable to read TDAI_SHARED_LLM_CONFIG at ${configPath}: ${detail}`);
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`TDAI_SHARED_LLM_CONFIG at ${configPath} must contain a YAML object`);
+  }
+
+  const llm = (parsed as Record<string, unknown>).llm;
+  const maxTokens = llm && typeof llm === "object" && !Array.isArray(llm)
+    ? (llm as Record<string, unknown>).maxTokens
+    : undefined;
+  if (typeof maxTokens !== "number" || !Number.isFinite(maxTokens) || maxTokens <= 0) {
+    throw new Error(`TDAI_SHARED_LLM_CONFIG at ${configPath} must set llm.maxTokens to a positive number`);
+  }
+  return maxTokens;
+}
+
+function resolvedLlmMaxTokens(): number {
+  // Keep the standalone service's explicit LLM_MAX_TOKENS override intact.
+  // The root Compose deployment leaves it unset so both services share YAML.
+  if (process.env.LLM_MAX_TOKENS) return envInt("LLM_MAX_TOKENS", 32768);
+  return sharedGatewayMaxTokens() ?? 32768;
+}
+
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
 }
@@ -197,7 +233,7 @@ export function loadConfig(): ServiceConfig {
       apiKey: env("LLM_API_KEY", ""),
       model: env("LLM_MODEL", "Memory-Model"),
       baseUrl: env("LLM_BASE_URL", ""),
-      maxTokens: envInt("LLM_MAX_TOKENS", 32768),
+      maxTokens: resolvedLlmMaxTokens(),
       reasoningEffort: parseLlmReasoningEffort(env("LLM_REASONING_EFFORT", "")),
       timeoutMs: envInt("LLM_TIMEOUT_MS", 1200000),
       stream: process.env.LLM_STREAM === "true",
