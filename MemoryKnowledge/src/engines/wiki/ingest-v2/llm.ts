@@ -12,6 +12,7 @@
 import { generateText, streamText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { Agent, fetch as undiciFetch } from "undici";
 import type { LlmReasoningEffort } from "../../../config.js";
 import { createLogger } from "../../../logger.js";
 
@@ -58,6 +59,93 @@ export interface NormalizedLlmConfig {
 const DEFAULT_MODEL = "Memory-Model";
 const DEFAULT_MAX_TOKENS = 8192;
 const DEFAULT_TIMEOUT_MS = 1_200_000; // 20min — reasoning 模型需要更长时间
+
+// Node/Undici defaults headersTimeout and bodyTimeout to five minutes. Wiki
+// ingestion can legitimately take longer, so disable those transport-level
+// limits and let each call's AbortSignal.timeout(config.timeoutMs) be the one
+// authoritative timeout.
+const longRunningLlmAgent = new Agent({
+  connectTimeout: 30_000,
+  headersTimeout: 0,
+  bodyTimeout: 0,
+});
+
+// Node's bundled fetch types and Undici's package types may come from different
+// versions, even though they share the same runtime Fetch contract. Keep that
+// compatibility cast local to this transport adapter.
+const longRunningLlmFetch = ((input: unknown, init?: unknown) =>
+  undiciFetch(
+    input as never,
+    { ...(init as object), dispatcher: longRunningLlmAgent } as never,
+  )) as typeof fetch;
+
+const MAX_LOGGED_ERROR_TEXT_LENGTH = 4_096;
+
+function redactAndTruncate(value: string): string {
+  const redacted = value
+    .replace(/(Bearer\s+)[^\s,;]+/gi, "$1[REDACTED]")
+    .replace(/\b(sk-[A-Za-z0-9_-]{4})[A-Za-z0-9_-]*/g, "$1…[REDACTED]")
+    .replace(/([?&](?:api[_-]?key|token|secret|password)=)[^&#\s]+/gi, "$1[REDACTED]");
+  return redacted.length > MAX_LOGGED_ERROR_TEXT_LENGTH
+    ? `${redacted.slice(0, MAX_LOGGED_ERROR_TEXT_LENGTH)}…[truncated]`
+    : redacted;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function safeErrorText(value: unknown): string | undefined {
+  if (typeof value === "string") return redactAndTruncate(value);
+  if (value === undefined) return undefined;
+  try {
+    return redactAndTruncate(JSON.stringify(value));
+  } catch {
+    return redactAndTruncate(String(value));
+  }
+}
+
+/** Convert SDK/Undici errors into JSON-safe diagnostics without logging secrets. */
+export function describeLlmError(
+  error: unknown,
+  seen = new WeakSet<object>(),
+  depth = 0,
+): Record<string, unknown> {
+  if (depth >= 4) return { truncatedCauseChain: true };
+  if (!error || typeof error !== "object") return { message: safeErrorText(error) ?? String(error) };
+  if (seen.has(error)) return { circularCause: true };
+  seen.add(error);
+
+  const record = error as Record<string, unknown>;
+  const details: Record<string, unknown> = {
+    name: typeof record.name === "string" ? record.name : "Error",
+    message: safeErrorText(record.message) ?? String(error),
+  };
+
+  for (const key of ["code", "errno", "status", "statusCode", "type", "requestId"] as const) {
+    const value = record[key];
+    if (typeof value === "string" || typeof value === "number") details[key] = value;
+  }
+  if (typeof record.url === "string") details.url = redactAndTruncate(record.url);
+
+  const responseBody = safeErrorText(record.responseBody);
+  if (responseBody) details.responseBody = responseBody;
+
+  const headers = asRecord(record.responseHeaders);
+  if (headers) {
+    const responseIds: Record<string, string> = {};
+    for (const key of ["x-request-id", "openai-request-id", "x-cpa-trace-id"]) {
+      const value = headers[key];
+      if (typeof value === "string") responseIds[key] = value;
+    }
+    if (Object.keys(responseIds).length > 0) details.responseIds = responseIds;
+  }
+
+  if (record.cause !== undefined) details.cause = describeLlmError(record.cause, seen, depth + 1);
+  return details;
+}
 
 /**
  * 把上层多种命名的 config 归一化。
@@ -118,8 +206,8 @@ export function createLlmClient(raw: RawLlmConfig | undefined): LlmClient {
 
   // 按 protocol 选 AI SDK provider 工厂（两者都实现 LanguageModelV3 接口）。
   const provider = config.protocol === "anthropic"
-    ? createAnthropic({ baseURL: config.baseUrl, apiKey: config.apiKey })
-    : createOpenAI({ baseURL: config.baseUrl, apiKey: config.apiKey });
+    ? createAnthropic({ baseURL: config.baseUrl, apiKey: config.apiKey, fetch: longRunningLlmFetch })
+    : createOpenAI({ baseURL: config.baseUrl, apiKey: config.apiKey, fetch: longRunningLlmFetch });
 
   return {
     config,
@@ -195,7 +283,7 @@ export function createLlmClient(raw: RawLlmConfig | undefined): LlmClient {
       } catch (err) {
         log.error(`LLM 调用失败 [${label}]`, {
           ms: Date.now() - startMs,
-          error: err instanceof Error ? err.message : String(err),
+          error: describeLlmError(err),
         });
         throw err;
       }
