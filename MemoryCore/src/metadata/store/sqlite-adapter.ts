@@ -20,7 +20,7 @@ import {
 } from "./relation-id-insert.js";
 import { generateUserKey } from "../utils/crypto.js";
 import { isUserKeyExpired } from "../utils/user-key.js";
-import { DEFAULT_GROUP_NAME, EXTRACTION_GROUP_NAME, InstanceUpstreamWriteConflictError } from "../types.js";
+import { DEFAULT_GROUP_NAME, EXTRACTION_GROUP_NAME, InstanceUpstreamWriteConflictError, DEFAULT_TASK_SENTINEL } from "../types.js";
 import type {
   UserEntity,
   UserKeyEntity,
@@ -1088,6 +1088,16 @@ export class SqliteMetadataStore implements IMetadataStore {
   // Task（含 linkAgents 原子）
   // ============================================================
   createTask(input: CreateTaskInput): TaskEntity {
+    // v3.3 reserved id 守卫 (深度防御二道墙): service 层 createTask 已经先过了
+    // 守卫, 走 Router / API 路径的调用根本到不了这里; 但迁移脚本 / seed 工具可能
+    // 绕过 service 直调 store, 这道墙保证即便绕过也无法写入 id="default" 的真实
+    // task (会让 Proxy 的虚拟值短路链路串味)。详见 service/metadata-service.ts
+    // createTask 的 reserved id 守卫注释。
+    if (input.task_id === DEFAULT_TASK_SENTINEL) {
+      throw new Error(
+        `createTask: task_id "${DEFAULT_TASK_SENTINEL}" is reserved by Proxy sessionInit.defaultTaskId as a virtual "no-task" marker; let store auto-generate task_id instead`,
+      );
+    }
     const now = nowIso();
     for (let attempt = 0; attempt < PK_RETRY_LIMIT; attempt++) {
       const taskId = input.task_id ?? generateId(ID_PREFIX.task);

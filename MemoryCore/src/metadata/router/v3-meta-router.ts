@@ -343,6 +343,18 @@ const routeTable: Record<string, Handler> = {
     return s.configParams.setUserConfigForCaller(d);
   }),
 
+  // ConfigParam instance scope (system_admin only).
+  // 实例级配置读写; 首个用例 team_memory.enabled 主开关
+  // (see MemoryProxy/docs/design/2026-10-13-team-memory-master-switch.md).
+  [`${V3_PREFIX}/config/instance/get`]: bind(S.configInstanceGetSchema, async (d, c, s) => {
+    s.assertCanManageUsers(c);
+    return s.configParams.getInstanceConfigForCaller(d);
+  }),
+  [`${V3_PREFIX}/config/instance/set`]: bind(S.configInstanceSetSchema, async (d, c, s) => {
+    s.assertCanManageUsers(c);
+    return s.configParams.setInstanceConfigForCaller(d);
+  }),
+
   // UserSessionDefault (v3.3) — 用户级 session 默认 (team, agent, task) 三元组
   //
   // 鉴权: service 层做 assertCallerIsOwner, 这里不重复; 实体校验 (team/agent/task

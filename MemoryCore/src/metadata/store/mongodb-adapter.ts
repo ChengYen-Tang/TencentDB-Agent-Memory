@@ -72,7 +72,7 @@ import type {
   GroupType,
   UpstreamMode,
 } from "../types.js";
-import { DEFAULT_GROUP_NAME, InstanceUpstreamWriteConflictError } from "../types.js";
+import { DEFAULT_GROUP_NAME, InstanceUpstreamWriteConflictError, DEFAULT_TASK_SENTINEL } from "../types.js";
 import { DEFAULT_PAGINATION } from "../pagination.js";
 import { buildChatMemoryAssetId } from "../utils/chat-memory-asset.js";
 import { DuplicateUserKeyError } from "./interface.js";
@@ -607,6 +607,10 @@ export class MongoMetadataStore implements IMetadataStore {
       await this.col("meta_user_keys").deleteMany({ user_id: { $in: result.deleted_ids } } as Document);
       await this.col("meta_team_members").deleteMany({ user_id: { $in: result.deleted_ids } } as Document);
       await this.col("meta_asset_acl").deleteMany({ subject_type: "user", subject_id: { $in: result.deleted_ids } } as Document);
+      // v3.3: meta_user_session_defaults 无 FK 级联 (MongoDB), 应用层清理。
+      // SQLite 侧由 FOREIGN KEY ... ON DELETE CASCADE 自动完成, 此处与之对齐,
+      // 避免用户销号后 orphan 行一直指向死 user_id/team_id (设计文档 §3.3)。
+      await this.col("meta_user_session_defaults").deleteMany({ user_id: { $in: result.deleted_ids } } as Document);
     }
     return result;
   }
@@ -979,6 +983,12 @@ export class MongoMetadataStore implements IMetadataStore {
   // Task
   // ============================================================
   async createTask(input: CreateTaskInput): Promise<TaskEntity> {
+    // v3.3 reserved id 守卫 (与 sqlite-adapter.createTask 对称, 见彼处注释)。
+    if (input.task_id === DEFAULT_TASK_SENTINEL) {
+      throw new Error(
+        `createTask: task_id "${DEFAULT_TASK_SENTINEL}" is reserved by Proxy sessionInit.defaultTaskId as a virtual "no-task" marker; let store auto-generate task_id instead`,
+      );
+    }
     const now = nowIso();
     for (let attempt = 0; attempt < PK_RETRY_LIMIT; attempt++) {
       const task: TaskEntity = {

@@ -105,6 +105,9 @@ import {
   DEFAULT_GROUP_NAME,
   EXTRACTION_GROUP_NAME,
   InstanceUpstreamWriteConflictError,
+  // v3.3 user-session-default: Proxy sessionInit.defaultTaskId 的虚拟值字面量,
+  // Service 层用它来拒绝新建 id="default" 的真实 Task (reserved id 守卫)。
+  DEFAULT_TASK_SENTINEL,
 } from "../types.js";
 import { formatListResult, paginateArray, resolvePagination, wrapPaginated, DEFAULT_PAGINATION } from "../pagination.js";
 import { generateId, ID_PREFIX } from "../utils/id-generator.js";
@@ -1063,9 +1066,32 @@ export class MetadataService {
   }
 
   // ============================================================
-  // Task（校验 team 存在 + linked agents 同 team）
+  // Task（校验 team 存在 + linked agents 同 team + reserved id 守卫）
   // ============================================================
+  //
+  // Reserved id 守卫 (v3.3 user-session-default):
+  //   禁止 task_id 显式传入 DEFAULT_TASK_SENTINEL ("default")。
+  //
+  //   背景: Proxy sessionInit.defaultTaskId 把字面量 "default" 用作
+  //   "不绑定任何 Task" 的虚拟值 (Proxy 10+ 处 `task_id === config.defaultTaskId`
+  //   短路识别)。若让运营真的建一条 id="default" 的 TaskEntity, 整条短路链路
+  //   会在"命中真实 task 但按虚拟值处理" —— 该 task 永远拿不到参与日志 /
+  //   skill 召回 / task context, 变成 dormant bug。
+  //
+  //   校验只对**新建**生效; 历史脏数据 (若有) 不受影响, 不会卡升级。详见
+  //   MemoryProxy/docs/design/2026-10-10-user-session-default-design.md §4.2。
+  //
+  //   深度防御: service + store 两层都挡, store 层守 service 可能被绕过
+  //   (如数据迁移脚本直调 store) 的场景; Router 层 taskCreateSchema 本来就
+  //   不接受 task_id 参数, 构成三层防线。
   async createTask(input: CreateTaskInput): Promise<TaskEntity> {
+    // Reserved id 守卫: 本人在最前拦一次, 快速失败不触及后续校验与 store 事务。
+    if (input.task_id === DEFAULT_TASK_SENTINEL) {
+      throw new MetadataError(
+        "reserved_task_id",
+        `task_id "${DEFAULT_TASK_SENTINEL}" is reserved (used by Proxy sessionInit.defaultTaskId as a virtual "no-task" marker); please let the system auto-generate task_id instead`,
+      );
+    }
     await this.assertTeamExists(input.team_id);
     for (const link of input.linked_agents ?? []) {
       const agent = await this.getAgentById(link.agent_id);
