@@ -86,6 +86,23 @@ KNOWLEDGE_SERVICE_URL=http://127.0.0.1:8421
 `LLM_MODE=proxy`（默认）：Wiki 用 Panel 按 `x-tdai-service-id` 推送的 `llm_binding`，本地不必起 Proxy。  
 `LLM_MODE=custom`：在 `.env` 设 `LLM_API_KEY` / `LLM_BASE_URL`（及可选 `LLM_PROTOCOL=anthropic`）。
 
+## Wiki 向量与混合搜索
+
+可单独连接 OpenAI 兼容的 `/v1/embeddings` 服务，例如提供 BGE-M3 的 vLLM：
+
+```dotenv
+KNOWLEDGE_WIKI_SEARCH_MODE=hybrid
+KNOWLEDGE_EMBEDDING_BASE_URL=http://embedding-host:8000/v1
+KNOWLEDGE_EMBEDDING_MODEL=BAAI/bge-m3
+KNOWLEDGE_EMBEDDING_API_KEY=
+```
+
+`KNOWLEDGE_WIKI_SEARCH_MODE` 支持 `bm25`（默认）、`vector`（dense 余弦相似度）与 `hybrid`（BM25 和 dense 结果经 RRF 合并）。`POST /v3/wiki/search` 的 `mode` 字段，以及 `POST /v3/tools/call` 中 wiki `search` 的 `params.mode`，可以对单次请求覆盖默认模式。该功能使用 BGE-M3 的 dense 输出；稀疏路由使用 BM25，并非 BGE-M3 原生 sparse 输出。Code Graph 不使用 embedding。
+
+首次向量搜索会扫描 Wiki 页面并请求 embedding，结果保存在每个 Wiki 的 `index.db`；后续搜索复用未变更的文本。更改 embedding 地址或模型会自动重新计算。首次搜索可能较慢，LLM、embedding 服务各自独立配置。大规模 Wiki 使用 SQLite 全量相似度扫描，搜索成本随文本块数量增加。
+
+MCP stdio 客户端通过 `KNOWLEDGE_API_URL` 连接 HTTP 服务，并通过 `KNOWLEDGE_SERVICE_ID` 指定租户（默认 `default`）；Wiki 搜索工具也接受 `mode` 参数。
+
 ## 常用命令
 
 ```bash

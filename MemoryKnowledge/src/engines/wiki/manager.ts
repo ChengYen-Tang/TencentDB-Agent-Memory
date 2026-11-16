@@ -27,6 +27,7 @@ import type {
   ResultLink,
 } from "./types.js";
 import { graphMultiHopSearch } from "./graph-search.js";
+import { defaultSearchMode, fuseSearch, vectorSearch, type WikiSearchMode } from "./vector-search.js";
 import {
   initIndexDb,
   getReadDb,
@@ -160,6 +161,7 @@ export interface WikiSourceManager {
   list(): WikiSourceState[];
   remove(name: string): void;
   search(name: string, query: string, limit?: number, options?: SearchOptions): SearchResponse;
+  searchWithMode(name: string, query: string, limit?: number, mode?: WikiSearchMode, options?: SearchOptions): Promise<SearchResponse>;
   graph(name: string): { nodes: GraphNode[]; edges: GraphEdge[]; communities: CommunityInfo[] };
   readPage(name: string, relPath: string): string | null;
   getPages(name: string): WikiPage[];
@@ -1072,6 +1074,15 @@ export function createWikiSourceManager(dataDir: string): WikiSourceManager {
       persist();
     },
     search: (name, query, limit, options) => searchInternal(name, query, limit ?? DEFAULT_LIMIT, options ?? {}),
+    searchWithMode: async (name, query, limit, mode, options) => {
+      const selected = mode ?? defaultSearchMode();
+      const n = Math.max(1, Math.min(100, Math.floor(limit ?? DEFAULT_LIMIT) || DEFAULT_LIMIT));
+      if (selected === "bm25") return searchInternal(name, query, n, options ?? {});
+      const state = sources.get(name);
+      if (!state) throw new Error("Wiki index not found");
+      const vector = await vectorSearch(state.path, scanWikiDir(state.path), query, selected === "hybrid" ? Math.min(100, n * 3) : n);
+      return selected === "vector" ? vector : fuseSearch(searchInternal(name, query, Math.min(100, n * 3), options ?? {}), vector, n);
+    },
     graph: (name) => {
       const state = sources.get(name);
       if (!state) return { nodes: [], edges: [], communities: [] };

@@ -22,6 +22,7 @@ import type { WikiService, RawContent } from "../store/index.js";
 import type { WikiSourceManager } from "../engines/wiki/index.js";
 import type { WikiStatus } from "../store/index.js";
 import { maxBytesOf, toWireFormats } from "../document-converter/format-registry.js";
+import { searchMode } from "../engines/wiki/vector-search.js";
 import {
   extractIdFields,
   isValidIdSegment,
@@ -571,7 +572,8 @@ export function createWikiRoutes(deps: WikiRouteDeps): Hono {
       minScore = body.minScore;
     }
 
-    const response = wikiMgr.search(wikiId, query, limit, { hop, decay, minScore });
+    if (body.mode !== undefined && !searchMode(body.mode)) return c.json(wrapError(400, "mode must be bm25, vector or hybrid"), 400);
+    const response = await wikiMgr.searchWithMode(wikiId, query, limit, searchMode(body.mode), { hop, decay, minScore });
     return c.json(wrapOk(response));
   });
 

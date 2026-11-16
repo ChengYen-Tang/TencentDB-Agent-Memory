@@ -157,6 +157,7 @@ export const MCP_TOOLS: McpToolDef[] = [
         wiki_id: { type: "string", description: "The wiki ID (wiki-...)" },
         query: { type: "string", description: "Search query" },
         limit: { type: "integer", description: "Max results (default: 20)" },
+        mode: { type: "string", enum: ["bm25", "vector", "hybrid"], description: "Wiki search mode; defaults to the server setting" },
         hop: {
           type: "integer",
           minimum: 0,

@@ -19,6 +19,7 @@ import type { WikiSourceManager } from "../engines/wiki/index.js";
 import { executeTool as executeCodeTool } from "../engines/code/index.js";
 import { wrapOk, wrapError, isValidIdSegment } from "../api-helpers.js";
 import { isWikiId, isCodeGraphId } from "../store/ids.js";
+import { searchMode } from "../engines/wiki/vector-search.js";
 
 export interface ToolsRouteDeps {
   wikiService: WikiService;
@@ -54,10 +55,11 @@ const WIKI_TOOLS: HttpToolDef[] = [
   },
   {
     name: "search",
-    description: "BM25 全文搜索 wiki 页面内容。用关键词查找相关文档。",
+    description: "搜索 wiki 页面，支持 BM25、向量及混合检索。",
     params: {
       query: { type: "string", required: true, description: "搜索关键词" },
       limit: { type: "integer", required: false, default: 20, description: "返回结果数上限" },
+      mode: { type: "string", required: false, enum: ["bm25", "vector", "hybrid"], description: "检索模式，省略时使用服务默认值" },
     },
   },
   {
@@ -324,7 +326,8 @@ async function executeWikiTool(
         return Response.json(wrapOk({ results: [], links: [], count: 0 }));
       }
       const limit = typeof params.limit === "number" ? params.limit : 20;
-      const response = wikiMgr.search(wiki_id, query, limit);
+      if (params.mode !== undefined && !searchMode(params.mode)) return Response.json(wrapError(400, "mode must be bm25, vector or hybrid"), { status: 400 });
+      const response = await wikiMgr.searchWithMode(wiki_id, query, limit, searchMode(params.mode));
       return Response.json(wrapOk(response));
     }
     case "list_pages": {

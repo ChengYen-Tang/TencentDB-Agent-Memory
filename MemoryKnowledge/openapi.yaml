@@ -408,7 +408,7 @@ paths:
   /wiki/search:
     post:
       tags: [LLM-Wiki]
-      summary: Search wiki pages (BM25 full-text)
+      summary: Search wiki pages (BM25, vector, or hybrid)
       operationId: searchWiki
       requestBody:
         required: true
@@ -1002,6 +1002,10 @@ components:
         limit:
           type: integer
           default: 20
+        mode:
+          type: string
+          enum: [bm25, vector, hybrid]
+          description: Overrides KNOWLEDGE_WIKI_SEARCH_MODE for this request.
 
     # ── Code-Graph Schemas ──
 
