@@ -103,6 +103,12 @@ KNOWLEDGE_EMBEDDING_API_KEY=
 
 MCP stdio 客户端通过 `KNOWLEDGE_API_URL` 连接 HTTP 服务，并通过 `KNOWLEDGE_SERVICE_ID` 指定租户（默认 `default`）；Wiki 搜索工具也接受 `mode` 参数。
 
+## Azure Repos Git（PAT）
+
+Code Graph 来源可选择 `azure-devops`，填写 Azure Repos 的 HTTPS clone URL、分支和具有 **Code (Read)** 权限的 PAT。创建 API 可在 `POST /v3/code-graph/create` 的 JSON 中提供 `provider_id: "azure-devops"` 和 `secret`（PAT）；请勿将 PAT 放入 `repo_url`。服务端在 Git 子进程中发送认证头，clone 后的 remote URL 不包含 PAT；现有凭据存储使用 base64 编码，并非加密，应限制数据卷访问。
+
+为兼容自签名证书，`CODE_SOURCE_AZURE_DEVOPS_VERIFY_TLS=false` 默认仅对 Azure DevOps Git 操作关闭证书验证；设置为 `true` 可以重新验证。关闭验证可能使 PAT 被中间人窃取，仅应在可信网络使用。代码库地址如为内网 IP，可能需要设置 `KNOWLEDGE_SSRF_CHECK=off`（此开关会关闭服务的私网地址拦截），并确认容器能访问 Azure DevOps。
+
 ## 常用命令
 
 ```bash

@@ -40,6 +40,7 @@ import type { ISshKeyStore } from "./ssh-key/types.js";
 import { isSshUrl } from "./source-fetcher/ssh-options.js";
 import { buildCloneUrl, stripCredentials } from "./code-source/clone-url.js";
 import { CodeSourceRegistry } from "./code-source/registry.js";
+import { AZURE_DEVOPS_PROVIDER_ID, azureDevOpsHttpOptions } from "./code-source/providers/azure-devops.js";
 import { WikiSourceRegistry } from "./wiki-source/registry.js";
 import { createWikiImporter } from "./wiki-source/wiki-importer.js";
 import { isGitAuthError, explainGitAuthError, isRemoteBranchMissingError } from "./source-fetcher/git-fetcher.js";
@@ -187,17 +188,16 @@ export function createKnowledgeModule(config: KnowledgeModuleConfig): KnowledgeM
    *   有 → 走 provider.applyToCloneUrl 或默认 basic-auth 注入
    *   无 → 公开仓，返回干净地址（行为与改造前一致）
    *
-   * 落库的是干净地址，此处拼出来的带凭据 URL 只活在本次调用栈里
-   * （不写盘、不进日志、不进响应体）。
+   * Azure DevOps 使用 Git 子进程环境传递认证头，仓库 URL 保持干净。
    */
   const cloneUrlFor = (
     serviceId: string,
     codeGraphId: string,
     repoUrl: string,
-  ): string => {
+  ): { url: string; http?: { authorization: string; verifyTls: boolean }; hasCredential: boolean } => {
     const ref = { type: "code-graph" as const, serviceId, resourceId: codeGraphId };
     const cred = credentialStore.get(ref);
-    if (!cred) return repoUrl; // 无凭据 = 公开仓
+    if (!cred) return { url: repoUrl, hasCredential: false }; // 无凭据 = 公开仓
     const status = credentialStore.status(ref);
     if (!status) throw new Error(`no credential row for code-graph ${codeGraphId}`);
     const provider = codeSourceRegistry.get(status.provider_id);
@@ -206,7 +206,14 @@ export function createKnowledgeModule(config: KnowledgeModuleConfig): KnowledgeM
         `code source provider '${status.provider_id}' is not registered (check CODE_SOURCE_ENABLED)`,
       );
     }
-    return buildCloneUrl(provider, repoUrl, { secret: cred.secret, username: cred.username });
+    if (status.provider_id === AZURE_DEVOPS_PROVIDER_ID) {
+      return {
+        url: repoUrl,
+        hasCredential: true,
+        http: azureDevOpsHttpOptions(cred.secret),
+      };
+    }
+    return { url: buildCloneUrl(provider, repoUrl, { secret: cred.secret, username: cred.username }), hasCredential: true };
   };
 
   /**
@@ -271,9 +278,10 @@ export function createKnowledgeModule(config: KnowledgeModuleConfig): KnowledgeM
 
     // 外部来源（工蜂等）→ 注入令牌；无凭据行 → 公开仓。
     const cleanUrl = stripCredentials(repoUrl);
-    const effectiveUrl = cloneUrlFor(serviceId, codeGraphId, cleanUrl);
-    // 判定「是否私有仓」用 URL 是否被改写（等价于凭据行是否存在，且无需再查一次库）。
-    const needsCredential = effectiveUrl !== cleanUrl;
+    const source = cloneUrlFor(serviceId, codeGraphId, cleanUrl);
+    const effectiveUrl = source.url;
+    // 私有仓需要在每次 clone 时重新提供凭据。
+    const needsCredential = source.hasCredential;
 
     // Resolve protocol-specific fetcher (validates url: https/ssh whitelist + SSRF blocklist).
     const fetcher = fetcherRegistry.resolve(effectiveUrl);
@@ -284,6 +292,7 @@ export function createKnowledgeModule(config: KnowledgeModuleConfig): KnowledgeM
       ownerUserId: ctx.ownerUserId,
       repoUrl: effectiveUrl,
     });
+    const fetchOptions = source.http ? { http: source.http } : sshOpts;
 
     const isExistingRepo = existsSync(join(dir, ".git"));
     // ★ 私有仓不做增量 sync：GitSourceFetcher.sync() 内部是 `git fetch origin`，
@@ -296,7 +305,7 @@ export function createKnowledgeModule(config: KnowledgeModuleConfig): KnowledgeM
     if (canIncremental) {
       try {
         setInternalStatus("fetching");
-        const res = await fetcher.sync(effectiveUrl, branch, dir, sshOpts);
+        const res = await fetcher.sync(effectiveUrl, branch, dir, fetchOptions);
         version = res.version;
 
         setInternalStatus("indexing");
@@ -324,7 +333,7 @@ export function createKnowledgeModule(config: KnowledgeModuleConfig): KnowledgeM
       setInternalStatus("cloning");
       let res;
       try {
-        res = await fetcher.fetch(effectiveUrl, branch, dir, sshOpts);
+        res = await fetcher.fetch(effectiveUrl, branch, dir, fetchOptions);
       } catch (err) {
         const raw = err instanceof Error ? err.message : String(err);
         // ★ 顺序要紧：先判「分支不存在」，再判认证。

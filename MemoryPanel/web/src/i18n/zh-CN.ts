@@ -504,9 +504,9 @@ export const zhCN = {
   'code.register.sshHint':
     '已识别为 SSH 仓库。点击「注册」后会先为你生成 SSH 公钥，请把公钥添加到代码平台后再继续。',
   'code.register.urlError':
-    '请输入合法的 Git 仓库地址（HTTPS 或 SSH），且必须以 .git 结尾，不能含空格。',
+    '请输入以 .git 结尾的 Git 地址，或以 /_git/<仓库名> 结尾的 Azure Repos HTTPS 地址，不能含空格。',
   'code.register.invalidUrl':
-    '请输入合法的 Git 仓库地址：HTTPS 形如 https://gitlab.example.com/namespace/repo.git，SSH 形如 git@github.com:namespace/repo.git 或 ssh://git@host:2222/namespace/repo.git。',
+    '请输入以 .git 结尾的 Git 地址，或以 /_git/<仓库名> 结尾的 Azure Repos HTTPS 地址。',
   'code.register.submitting': '注册中…',
   'code.register.submit': '注册',
   'code.register.source': '来源',
@@ -515,6 +515,7 @@ export const zhCN = {
   'code.register.sourcePublic': '公开（无需令牌）',
   // 来源展示名按来源 id 本地化；后端若下发 display_name 则以其为准（见 CodeSourcesPanel）。
   'code.source.gongfeng': '腾讯工蜂',
+  'code.source.azure-devops': 'Azure DevOps',
   'code.source.ssh': 'SSH',
   // SSH 公钥（两段式注册第 1 段）
   'code.sshKey.caption': '配置 SSH 公钥',

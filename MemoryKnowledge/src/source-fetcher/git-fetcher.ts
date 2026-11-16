@@ -24,6 +24,8 @@ import { isSshUrl, parseSshHost, buildSshCommand } from "./ssh-options.js";
  * 单独抽成常量是为了让「这里开了 unsafe 开关」在代码里只有一处、易于审计。
  */
 const UNSAFE_SSH_COMMAND = { allowUnsafeSshCommand: true } as const;
+// Only controlled per-repository HTTP settings and an empty credential helper are supplied.
+const AZURE_HTTP_GIT_OPTIONS = { unsafe: { allowUnsafeConfigEnvCount: true, allowUnsafeCredentialHelper: true } } as const;
 
 /**
  * 识别 git 认证 / 权限类错误（simple-git 无 TTY，git 交互式询问 Username/Password
@@ -280,6 +282,32 @@ export class GitSourceFetcher implements ISourceFetcher {
    *                  sync / 读版本时传实际目录作 baseDir。
    */
   private gitFor(sourceUrl: string, localPath?: string, opts?: GitFetchOptions): SimpleGit {
+    if (opts?.http) {
+      const url = new URL(sourceUrl);
+      if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
+        throw new Error("HTTP credentials require a clean HTTPS repository URL");
+      }
+      const git = localPath ? simpleGit(localPath, AZURE_HTTP_GIT_OPTIONS) : simpleGit(AZURE_HTTP_GIT_OPTIONS);
+      const gitEnv: NodeJS.ProcessEnv = {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: "0",
+        GIT_CONFIG_COUNT: "3",
+        GIT_CONFIG_KEY_0: `http.${url.toString()}.extraHeader`,
+        GIT_CONFIG_VALUE_0: opts.http.authorization,
+        GIT_CONFIG_KEY_1: "credential.helper",
+        GIT_CONFIG_VALUE_1: "",
+        GIT_CONFIG_KEY_2: `http.${url.toString()}.sslVerify`,
+        GIT_CONFIG_VALUE_2: opts.http.verifyTls ? "true" : "false",
+      };
+      if (opts.http.verifyTls) delete gitEnv.GIT_SSL_NO_VERIFY;
+      else gitEnv.GIT_SSL_NO_VERIFY = "true";
+      // These inherited editor variables are rejected by simple-git's unsafe
+      // operation guard and are unnecessary for non-interactive clone/fetch.
+      for (const name of ["EDITOR", "VISUAL", "PAGER", "GIT_EDITOR", "GIT_SEQUENCE_EDITOR", "GIT_PAGER", "GIT_ASKPASS", "SSH_ASKPASS", "GIT_SSH", "GIT_SSH_COMMAND", "GIT_PROXY_COMMAND", "GIT_EXTERNAL_DIFF", "GIT_CONFIG", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_EXEC_PATH", "GIT_TEMPLATE_DIR", "PREFIX"]) {
+        delete gitEnv[name];
+      }
+      return git.env(gitEnv);
+    }
     if (!isSshUrl(sourceUrl) || !opts?.ssh) {
       return localPath ? simpleGit(localPath) : simpleGit();
     }

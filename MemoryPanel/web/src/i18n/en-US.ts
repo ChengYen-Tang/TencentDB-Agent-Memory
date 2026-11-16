@@ -517,9 +517,9 @@ export const enUS = {
   'code.register.sshHint':
     'Detected an SSH repository. Clicking Register will first generate an SSH public key for you; add it to your git platform before continuing.',
   'code.register.urlError':
-    'Please enter a valid Git repository URL (HTTPS or SSH) ending with .git. No spaces allowed.',
+    'Enter a Git URL ending in .git, or an Azure Repos HTTPS URL ending in /_git/<repo>. No spaces allowed.',
   'code.register.invalidUrl':
-    'Please enter a valid Git repository URL: HTTPS like https://gitlab.example.com/namespace/repo.git, or SSH like git@github.com:namespace/repo.git / ssh://git@host:2222/namespace/repo.git.',
+    'Enter a Git URL ending in .git, or an Azure Repos HTTPS URL ending in /_git/<repo>.',
   'code.register.submitting': 'Registering…',
   'code.register.submit': 'Register',
   'code.register.source': 'Source',
@@ -529,6 +529,7 @@ export const enUS = {
   'code.register.sourcePublic': 'Public (no token)',
   // Source display names keyed by source id; backend display_name (if any) takes precedence.
   'code.source.gongfeng': 'Tencent Gongfeng',
+  'code.source.azure-devops': 'Azure DevOps',
   'code.source.ssh': 'SSH',
   // SSH public key (step 1 of the two-step registration)
   'code.sshKey.caption': 'Configure SSH public key',

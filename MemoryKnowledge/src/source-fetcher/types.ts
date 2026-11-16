@@ -31,6 +31,11 @@ export interface GitFetchOptions {
    * 仅当 sourceUrl 是 `git@` / `ssh://` 时有意义；HTTPS 下被忽略。
    */
   ssh?: SshFetchOptions;
+  /** HTTP authorization for the exact HTTPS repository, passed only to Git. */
+  http?: {
+    authorization: string;
+    verifyTls: boolean;
+  };
 }
 
 /**
