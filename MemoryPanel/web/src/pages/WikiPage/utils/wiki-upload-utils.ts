@@ -28,6 +28,28 @@ export async function readUploadFile(
   return { filename: file.name, content: await readAsBase64(file), encoding: 'base64' };
 }
 
+/** Keep each request within the Panel raw/write limits; the Wiki ingester still sees all saved files together. */
+export function batchUploadFiles(files: readonly File[]): File[][] {
+  // Keep these in sync with MAX_FILES_PER_REQUEST / MAX_TOTAL_SIZE in wiki-routes.ts.
+  const maxFiles = 10;
+  const maxBytes = 20 * 1024 * 1024;
+  const batches: File[][] = [];
+  let batch: File[] = [];
+  let bytes = 0;
+  for (const file of files) {
+    if (file.size > maxBytes) throw new Error(`File exceeds the per-request upload limit: ${file.name}`);
+    if (batch.length >= maxFiles || bytes + file.size > maxBytes) {
+      batches.push(batch);
+      batch = [];
+      bytes = 0;
+    }
+    batch.push(file);
+    bytes += file.size;
+  }
+  if (batch.length) batches.push(batch);
+  return batches;
+}
+
 export function findExistingRawFilenames(
   filenames: readonly string[],
   existingFilenames: readonly string[],

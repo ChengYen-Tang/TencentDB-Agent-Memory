@@ -22,7 +22,6 @@ import { Alert, Button, Input, Modal, Select, TabPanel, Tabs, Text } from 'tea-c
 import { tea } from '@/lib/tea-bridge';
 import { AttachIcon } from 'tea-icons-react';
 import { isAllowedFile, acceptAttr, maxBytesForFile } from '../utils/wiki-format-store';
-import { readUploadFile } from '../utils/wiki-upload-utils';
 import { WikiSourcePageTree } from './wiki-source-page-tree';
 import type {
   SourceProviderFormField,
@@ -38,9 +37,8 @@ export type ImportMode = 'files' | 'markdown' | 'external' | 'reingest';
  * ⚠️ `encoding` **必须能透传**：Knowledge 侧 `routes/wiki.ts` 的判据是
  * `r.encoding === "utf8" ? "utf8" : "base64"` —— **默认 base64**。
  * 手工粘贴的 Markdown 是纯文本，若不带 `encoding: 'utf8'` 会被按 base64
- * 严格校验拦下（`invalid base64 content: <filename>`）。此前类型里漏了这个
- * 字段，markdown tab 因此恒失败；文件 tab 走 readUploadFile 自带
- * `encoding: 'base64'`（内容也确实是 base64），故一直正常。
+ * 严格校验拦下（`invalid base64 content: <filename>`）。文件则由上传处理器
+ * 分批转成 base64 后提交。
  */
 export interface WikiRawFileInput {
   filename: string;
@@ -50,7 +48,8 @@ export interface WikiRawFileInput {
 
 export interface ImportSubmitPayload {
   mode: ImportMode;
-  files?: WikiRawFileInput[];
+  /** File handles are encoded and uploaded in bounded batches by the submit handler. */
+  uploadFiles?: File[];
   markdown?: WikiRawFileInput[];
   source_url?: string;
   provider_id?: string;
@@ -81,9 +80,10 @@ interface Props {
   /** 外部来源类型（iWiki 等）；有值时只显示 external tab。 */
   sourceType?: string | null;
   submitting: boolean;
+  batchProgress?: { completed: number; total: number } | null;
   external?: ExternalFlowProps;
   onClose: () => void;
-  onSubmit: (payload: ImportSubmitPayload) => void | Promise<void>;
+  onSubmit: (payload: ImportSubmitPayload) => void | boolean | Promise<void | boolean>;
 }
 
 /**
@@ -113,6 +113,7 @@ export function ImportAndIngestModal({
   visible,
   sourceType,
   submitting,
+  batchProgress,
   external,
   onClose,
   onSubmit,
@@ -234,8 +235,7 @@ export function ImportAndIngestModal({
         return;
       }
       // 统一 base64 通道：所有格式都以 base64 传输，服务端解码后按原始字节落盘
-      const items = await Promise.all(files.map(readUploadFile));
-      payload.files = items;
+      payload.uploadFiles = files;
     } else if (mode === 'markdown') {
       // 与 files tab 同源预校验：手工粘贴的 MD 也按 text 档上限拦（默认 512KB）。
       // 此前无此检查，超长文本要走完整请求才被后端拒，且报错文案写死 512KB。
@@ -298,6 +298,9 @@ export function ImportAndIngestModal({
                 <AttachIcon size={20} />
                 <p>{t('wiki.detail.dropzone')}</p>
               </div>
+              <Text theme="weak" style={{ display: 'block', marginTop: 8 }}>
+                {t('wiki.import.batchUploadHint')}
+              </Text>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -499,6 +502,11 @@ export function ImportAndIngestModal({
         {missingHint && (
           <Text theme="warning" style={{ marginRight: 12, alignSelf: 'center' }}>
             {missingHint}
+          </Text>
+        )}
+        {batchProgress && (
+          <Text theme="weak" style={{ marginRight: 12, alignSelf: 'center' }}>
+            {t('wiki.import.uploadProgress', batchProgress)}
           </Text>
         )}
         {/* 设计 §2.3：不再保留两阶段能力 —— 只有这一个主按钮，无次要按钮。

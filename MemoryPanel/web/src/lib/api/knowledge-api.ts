@@ -594,6 +594,10 @@ export const knowledgeApi = {
     upload: (opts: { teamId: string; wikiId: string; filename: string; content: string; encoding?: 'utf8' | 'base64' }): Promise<void> =>
       panelPost('/wiki/raw/write', { team_id: opts.teamId, wiki_id: opts.wikiId, files: [{ filename: opts.filename, content: opts.content, encoding: opts.encoding }] }),
 
+    /** Store one bounded batch of raw files without starting an ingest. */
+    uploadBatch: (opts: { teamId: string; wikiId: string; files: { filename: string; content: string; encoding?: 'utf8' | 'base64' }[] }): Promise<void> =>
+      panelPost('/wiki/raw/write', { team_id: opts.teamId, wiki_id: opts.wikiId, files: opts.files }),
+
     allocate: (teamId: string, wikiId: string, agentId: string): Promise<void> =>
       allocateKnowledge(teamId, wikiId, agentId),
 

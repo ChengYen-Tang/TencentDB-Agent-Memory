@@ -819,10 +819,9 @@ export function WikiDetailView({ store }: { store: WikiSourcesStore }) {
       <ImportAndIngestModal
         visible={showImportModal}
         sourceType={source?.source_type}
-        // Modal 的 submitting 仅用于展示按钮 loading 与阻止重复点击；由于我们
-        // 在 onSubmit 里 fire-and-forget 立即关闭 Modal（进度接管在页面顶部），
-        // Modal 存在期间没有"提交尚未返回"的窗口，恒为 false 即可。
-        submitting={false}
+        // 批量文件上传期间保留 Modal，展示分批进度并阻止重复提交。
+        submitting={store.submitting}
+        batchProgress={store.bulkImportProgress}
         external={{
           sourceProviders,
           formSourceType,
@@ -849,12 +848,10 @@ export function WikiDetailView({ store }: { store: WikiSourcesStore }) {
           },
         }}
         onClose={() => setShowImportModal(false)}
-        onSubmit={(payload) => {
-          // 设计 2026-09-21 §2.2：提交后立即关闭 Modal，进度由页面顶部进度条接管。
-          // submitAddAndIngest 内部已完成错误 toast / 进度回调 / 刷新，无需在此 await
-          // 整个抽取流程（否则 Modal 会一直转到 ingest 结束）。
-          void store.submitAddAndIngest({ wikiId: selectedWikiId, ...payload });
-          setShowImportModal(false);
+        onSubmit={async (payload) => {
+          // The method returns when the ingest job is accepted, not when LLM processing finishes.
+          const accepted = await store.submitAddAndIngest({ wikiId: selectedWikiId, ...payload });
+          if (accepted) setShowImportModal(false);
         }}
       />
     </div>

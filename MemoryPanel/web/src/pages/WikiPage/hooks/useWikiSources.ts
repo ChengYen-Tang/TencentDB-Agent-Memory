@@ -9,6 +9,7 @@ import { useTeams, useAgents } from '@/services';
 import { readAuth } from '@/components/LoginGate';
 import { tea, confirmThenRun } from '@/lib/tea-bridge';
 import {
+  batchUploadFiles,
   findExistingRawFilenames,
   formatOverwriteFilenames,
   readUploadFile,
@@ -40,6 +41,7 @@ export function useWikiSources() {
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [bulkImportProgress, setBulkImportProgress] = useState<{ completed: number; total: number } | null>(null);
   const uploadInFlightRef = useRef(false);
 
   // Allocate-to-agent
@@ -722,8 +724,8 @@ export function useWikiSources() {
   /**
    * 导入并抽取（设计 2026-09-21 合并入口）。
    *
-   * 一次复合请求完成"写 raw + 触发 ingest"；打断旧任务由 Panel/KS 的
-   * onBusy:'replace' 在后台完成，用户不可感知（无 confirm、无 Alert）。
+   * 本地文件先分批写 raw，全部保存后再触发一次 ingest；Markdown 与外部来源
+   * 仍走复合请求。打断旧任务由 Panel/KS 的 onBusy:'replace' 在后台完成。
    *
    * 本函数不自己轮询进度 —— 提交后立即 fetchSources 拿到新状态（KS 真值，
    * pending/processing），由 runningWikiKey 轮询 effect 接管后续刷新。
@@ -733,25 +735,43 @@ export function useWikiSources() {
     mode: 'files' | 'markdown' | 'external' | 'reingest';
     // encoding 必须保留并透传：Knowledge 默认按 base64 解码，手工粘贴 MD
     // 需显式 'utf8'，否则被判非法 base64。见 import-and-ingest-modal.tsx 注释。
-    files?: { filename: string; content: string; encoding?: 'utf8' | 'base64' }[];
+    uploadFiles?: File[];
     markdown?: { filename: string; content: string; encoding?: 'utf8' | 'base64' }[];
     source_url?: string;
     provider_id?: string;
     page_ids?: string[];
-  }): Promise<void> => {
+  }): Promise<boolean> => {
     const { wikiId, mode } = params;
-    if (!wikiId) return;
+    if (!wikiId || uploadInFlightRef.current) return false;
 
+    uploadInFlightRef.current = true;
+    setSubmitting(true);
+    let uploadedCount = 0;
     try {
-      const res = await knowledgeApi.wiki.importAndIngest({
-        wiki_id: wikiId,
-        mode,
-        ...(params.files ? { files: params.files } : {}),
-        ...(params.markdown ? { markdown: params.markdown } : {}),
-        ...(params.source_url ? { source_url: params.source_url } : {}),
-        ...(params.provider_id ? { provider_id: params.provider_id } : {}),
-        ...(params.page_ids ? { page_ids: params.page_ids } : {}),
-      });
+      let res: Awaited<ReturnType<typeof knowledgeApi.wiki.importAndIngest>>;
+      if (mode === 'files' && params.uploadFiles?.length) {
+        if (!activeTeamId) throw new Error(t('wiki.notify.selectTeam'));
+        const batches = batchUploadFiles(params.uploadFiles);
+        setBulkImportProgress({ completed: 0, total: batches.length });
+        for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+          const batch = batches[batchIndex];
+          const files = await Promise.all(batch.map(readUploadFile));
+          await knowledgeApi.wiki.uploadBatch({ teamId: activeTeamId, wikiId, files });
+          uploadedCount += batch.length;
+          setBulkImportProgress({ completed: batchIndex + 1, total: batches.length });
+        }
+        // All files are stored first. Trigger one ingest over the complete source directory.
+        res = await knowledgeApi.wiki.importAndIngest({ wiki_id: wikiId, mode: 'reingest' });
+      } else {
+        res = await knowledgeApi.wiki.importAndIngest({
+          wiki_id: wikiId,
+          mode,
+          ...(params.markdown ? { markdown: params.markdown } : {}),
+          ...(params.source_url ? { source_url: params.source_url } : {}),
+          ...(params.provider_id ? { provider_id: params.provider_id } : {}),
+          ...(params.page_ids ? { page_ids: params.page_ids } : {}),
+        });
+      }
 
       // 复合请求已回执：无论成功与否都可能改动 raw。
       // fetchSources 拉回新状态（pending/processing）—— sources 是唯一真相源，
@@ -763,7 +783,7 @@ export function useWikiSources() {
         const msg = res.error_message || t('wiki.notify.ingestFailed');
         tea.notify.error(msg);
         fetchDetail(wikiId);
-        return;
+        return false;
       }
 
       // ✅ 复合请求被接受（任务真的排上了）才显示进度卡片：
@@ -786,11 +806,20 @@ export function useWikiSources() {
 
       // 触发一次立即刷新，避免等下一拍轮询才反映新状态
       fetchDetail(wikiId);
+      return true;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const detail = err instanceof Error ? err.message : String(err);
+      const msg = uploadedCount > 0 && uploadedCount < (params.uploadFiles?.length ?? 0)
+        ? t('wiki.import.partialUploadFailed', { uploaded: uploadedCount, total: params.uploadFiles?.length, detail })
+        : detail;
       tea.notify.error(msg);
       setRawRefreshKey((k) => k + 1);
       fetchDetail(wikiId);
+      return false;
+    } finally {
+      uploadInFlightRef.current = false;
+      setSubmitting(false);
+      setBulkImportProgress(null);
     }
   };
 
@@ -1193,6 +1222,7 @@ export function useWikiSources() {
     setNewName,
     submitting,
     setSubmitting,
+    bulkImportProgress,
     // allocate
     allocateTarget,
     setAllocateTarget,
