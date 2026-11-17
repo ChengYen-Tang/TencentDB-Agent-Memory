@@ -103,6 +103,8 @@ export interface CommitOptions extends MergeOptions {
   globalLlmLimit?: LimitFunction;
   /** 跳过 batch log 写入（薄封装调用时由外层自行写单源日志） */
   skipLog?: boolean;
+  /** 串行 merge 阶段按已处理的 Wiki 页回报进度。 */
+  onPageProgress?: (completed: number, total: number) => void;
 }
 
 /**
@@ -225,7 +227,7 @@ export async function commitCandidates(
   llm: LlmClient | undefined,
   options?: CommitOptions,
 ): Promise<CommitResult> {
-  const { globalLlmLimit, skipLog, ...mergeOpts } = options ?? {};
+  const { globalLlmLimit, skipLog, onPageProgress, ...mergeOpts } = options ?? {};
 
   const byPage = new Map<string, Array<{ source: string; content: string }>>();
   for (const { sourceFilename, candidates } of allCandidates) {
@@ -237,6 +239,15 @@ export async function commitCandidates(
 
   const written: string[] = [];
   const mergeErrors: CommitResult["mergeErrors"] = [];
+  let completedPages = 0;
+  const reportPageComplete = () => {
+    completedPages++;
+    try {
+      onPageProgress?.(completedPages, byPage.size);
+    } catch {
+      // Progress reporting must never fail the merge transaction.
+    }
+  };
 
   for (const [relPath, entries] of byPage) {
     const fullPath = join(projectPath, relPath);
@@ -251,6 +262,7 @@ export async function commitCandidates(
         });
       }
       log.error("阻断越界落盘路径", { relPath, projectPath });
+      reportPageComplete();
       continue;
     }
     let existing = existsSync(fullPath) ? readFileSync(fullPath, "utf-8") : null;
@@ -282,6 +294,7 @@ export async function commitCandidates(
         log.error("页面合并失败", { relPath, source: entry.source, error: String(err) });
       }
     }
+    reportPageComplete();
   }
 
   try {

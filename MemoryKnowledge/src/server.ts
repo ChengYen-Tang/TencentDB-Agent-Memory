@@ -142,8 +142,16 @@ export function createApp() {
   const openapiPath = join(currentDir, "..", "openapi.yaml");
   try {
     const openapiContent = readFileSync(openapiPath, "utf-8");
+    // The checked-in spec uses localhost for local development. In Compose,
+    // publicBaseUrl is derived from TDAI_KNOWLEDGE_EXTERNAL_URL / TDAI_PUBLIC_HOST;
+    // use it so Swagger's "Try it out" targets the externally reachable service.
+    const swaggerServerUrl = config.publicBaseUrl || config.apiPrefix;
+    const swaggerOpenapiContent = openapiContent.replace(
+      /(^servers:\r?\n\s+- url:\s*)[^\r\n]+/m,
+      (_match, prefix: string) => `${prefix}${JSON.stringify(swaggerServerUrl)}`,
+    );
     app.get("/openapi.json", (c) => {
-      return c.body(openapiContent, 200, { "Content-Type": "application/yaml" });
+      return c.body(swaggerOpenapiContent, 200, { "Content-Type": "application/yaml" });
     });
     app.use("/docs", swaggerUI({ url: "/openapi.json" }));
     log.info("Swagger UI mounted at /docs");

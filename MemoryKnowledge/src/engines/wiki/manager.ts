@@ -393,8 +393,20 @@ function ftsSearch(db: DatabaseType.Database, query: string, limit: number): Arr
   return rows.map((r) => ({ id: r.page_id, score: -r.score }));
 }
 
+interface IndexWriteProgress {
+  stage: "pages" | "edges";
+  completed: number;
+  total: number;
+  overallCompleted: number;
+  overallTotal: number;
+}
+
 /** 事务内重建三张索引表（wiki_fts + page_meta + graph_edge）。由 withWriteDb 调用。 */
-function writeIndex(db: DatabaseType.Database, pages: WikiPage[]): void {
+function writeIndex(
+  db: DatabaseType.Database,
+  pages: WikiPage[],
+  onProgress?: (progress: IndexWriteProgress) => void,
+): void {
   db.prepare("DELETE FROM wiki_fts").run();
   db.prepare("DELETE FROM page_meta").run();
   db.prepare("DELETE FROM graph_edge").run();
@@ -404,14 +416,35 @@ function writeIndex(db: DatabaseType.Database, pages: WikiPage[]): void {
     "INSERT INTO page_meta(page_id, title, type, rel_path, snippet) VALUES (?,?,?,?,?)",
   );
   const insEdge = db.prepare("INSERT OR IGNORE INTO graph_edge(source_id, target_id) VALUES (?,?)");
+  const edges = resolveEdges(pages);
+  const overallTotal = pages.length + edges.length;
+  let overallCompleted = 0;
+  const report = (progress: Omit<IndexWriteProgress, "overallCompleted" | "overallTotal">) => {
+    try {
+      onProgress?.({ ...progress, overallCompleted, overallTotal });
+    } catch {
+      // Progress reporting must never fail the index transaction.
+    }
+  };
 
-  for (const p of pages) {
+  report({ stage: "pages", completed: 0, total: pages.length });
+  for (let i = 0; i < pages.length; i++) {
+    const p = pages[i]!;
     // wiki_fts + page_meta 收录所有页（含 hidden 类型，供检索）。
     insFts.run(p.id, tokenize(p.title).join(" "), tokenize(p.content).join(" "));
     insMeta.run(p.id, p.title, p.type, p.relPath, makeSnippet(p));
+    overallCompleted++;
+    report({ stage: "pages", completed: i + 1, total: pages.length });
   }
+
   // graph_edge 只在 visible 页间。
-  for (const e of resolveEdges(pages)) insEdge.run(e.source, e.target);
+  report({ stage: "edges", completed: 0, total: edges.length });
+  for (let i = 0; i < edges.length; i++) {
+    const edge = edges[i]!;
+    insEdge.run(edge.source, edge.target);
+    overallCompleted++;
+    report({ stage: "edges", completed: i + 1, total: edges.length });
+  }
 }
 
 /** 从读连接加载读模型：页元数据表 + 图（graph_edge 构建的内存图）。 */
@@ -569,7 +602,19 @@ export async function runIngestIncremental(
   globalLlmLimit?: LimitFunction,
 ): Promise<IngestOutcome> {
   const { extractSource, commitCandidates, scanExistingPages } = await import("./ingest-v2/index.js");
-  const report = createThrottledProgressFn(onProgress);
+  const report = createThrottledProgressFn((progress) => {
+    const processed = progress.completed + progress.failed;
+    log.info("runIngest 进度", {
+      phase: progress.phase,
+      progress: `${processed}/${progress.total}`,
+      completed: progress.completed,
+      total: progress.total,
+      failed: progress.failed,
+      skipped: progress.skipped,
+      percent: progress.percent,
+    });
+    onProgress?.(progress);
+  });
   const sourcesDir = join(projectPath, "raw", "sources");
   if (!existsSync(sourcesDir)) {
     log.warn("runIngest: raw/sources 不存在，跳过", { projectPath });
@@ -638,6 +683,10 @@ export async function runIngestIncremental(
         });
         log.info("runIngest 单源抽取完成", {
           source: d.filename,
+          progress: `${completed + failed}/${toIngestDisk.length}`,
+          completed,
+          total: toIngestDisk.length,
+          failed,
           candidates: candidates.size,
           ms: Date.now() - t0,
         });
@@ -654,6 +703,10 @@ export async function runIngestIncremental(
         });
         log.error("runIngest 单源抽取失败", {
           source: d.filename,
+          progress: `${completed + failed}/${toIngestDisk.length}`,
+          completed,
+          total: toIngestDisk.length,
+          failed,
           ms: Date.now() - t0,
           error: String(err),
         });
@@ -684,20 +737,20 @@ export async function runIngestIncremental(
   }
 
   // ── 阶段2：串行落盘合并 ──
-  report?.({
-    phase: "merging",
-    total: toIngestDisk.length,
-    completed,
-    failed,
-    skipped: skippedCount,
-    percent: 90,
-  });
-
   const successResults = extractResults.filter((r) => r.ok);
   const allCandidates = successResults.map((r) => ({
     sourceFilename: r.filename,
     candidates: r.candidates,
   }));
+  const candidatePageCount = new Set(allCandidates.flatMap((source) => [...source.candidates.keys()])).size;
+  report?.({
+    phase: "merging",
+    total: candidatePageCount,
+    completed: 0,
+    failed: 0,
+    skipped: skippedCount,
+    percent: 90,
+  });
 
   // B-1：仅在有候选需 merge/overview 时建 client；失败不 throw，保证上层仍能写 source 状态。
   // 纯 no-op（toIngest=0）或抽取全失败时不建 client（commit 只 rebuild index，不调 LLM）。
@@ -717,6 +770,16 @@ export async function runIngestIncremental(
   const { written, mergeErrors } = await commitCandidates(projectPath, allCandidates, llm, {
     globalLlmLimit,
     skipLog: allCandidates.length === 0,
+    onPageProgress: (pageCompleted, pageTotal) => {
+      report?.({
+        phase: "merging",
+        total: pageTotal,
+        completed: pageCompleted,
+        failed: 0,
+        skipped: skippedCount,
+        percent: 90 + Math.floor((pageCompleted / Math.max(pageTotal, 1)) * 5),
+      });
+    },
   });
 
   if (mergeErrors.length > 0) {
@@ -742,15 +805,7 @@ export async function runIngestIncremental(
     };
   });
 
-  // ── 阶段3：overview（FTS 索引由上层 ingest 写事务完成）──
-  report?.({
-    phase: "indexing",
-    total: toIngestDisk.length,
-    completed,
-    failed,
-    skipped: skippedCount,
-    percent: 98,
-  });
+  // ── 阶段3：overview（正式搜索索引由外层 ingest 写事务完成）──
 
   if (successResults.length > 0) {
     if (!llm) {
@@ -774,6 +829,14 @@ export async function runIngestIncremental(
   });
 
   const okCount = processed.filter((p) => p.ok).length;
+  report?.({
+    phase: "merging",
+    total: candidatePageCount,
+    completed: candidatePageCount,
+    failed: 0,
+    skipped: skippedCount,
+    percent: 97,
+  });
   log.info("runIngest 全部完成", {
     total: results.length,
     ok: okCount,
@@ -1023,10 +1086,74 @@ export function createWikiSourceManager(dataDir: string): WikiSourceManager {
     const t0 = Date.now();
     try {
       const pages = scanWikiDir(projectPath);
+      let lastIndexLogAt = 0;
+      let lastIndexLogPercent = -1;
+      let lastIndexLogCompleted = -1;
+      let lastIndexLogStage: IndexWriteProgress["stage"] | undefined;
+      let indexWorkCompleted = 0;
+      let indexWorkTotal = 0;
+      const indexCallback = createThrottledProgressFn(opts?.onProgress);
       withWriteDb(projectPath, (db) => {
-        writeIndex(db, pages);
+        writeIndex(db, pages, (progress) => {
+          indexWorkCompleted = progress.overallCompleted;
+          indexWorkTotal = progress.overallTotal;
+          const percent = progress.overallTotal === 0
+            ? 100
+            : Math.floor((progress.overallCompleted / progress.overallTotal) * 100);
+          const now = Date.now();
+          if (
+            progress.stage !== lastIndexLogStage ||
+            progress.overallCompleted === 0 ||
+            (
+              progress.overallCompleted < progress.overallTotal &&
+              progress.overallCompleted > lastIndexLogCompleted &&
+              now - lastIndexLogAt >= 1000 &&
+              percent >= lastIndexLogPercent
+            )
+          ) {
+            log.info("Wiki 索引重建進度", {
+              name,
+              stage: progress.stage,
+              progress: `${progress.completed}/${progress.total}`,
+              completed: progress.completed,
+              total: progress.total,
+              overallProgress: `${progress.overallCompleted}/${progress.overallTotal}`,
+              percent,
+            });
+            lastIndexLogAt = now;
+            lastIndexLogPercent = percent;
+            lastIndexLogCompleted = progress.overallCompleted;
+            lastIndexLogStage = progress.stage;
+          }
+          indexCallback?.({
+            phase: "indexing",
+            total: progress.overallTotal,
+            completed: progress.overallCompleted,
+            failed: 0,
+            skipped: 0,
+            percent: progress.overallTotal === 0
+              ? 98
+              : Math.min(99, 98 + Math.floor((progress.overallCompleted / progress.overallTotal) * 2)),
+          });
+        });
         for (const p of outcome.processed) recordSourceIngestResult(db, p);
         if (outcome.deletedSources.length > 0) deleteSources(db, outcome.deletedSources);
+      });
+      log.info("Wiki 索引重建完成", {
+        name,
+        progress: `${indexWorkCompleted}/${indexWorkTotal}`,
+        completed: indexWorkCompleted,
+        total: indexWorkTotal,
+        pages: pages.length,
+        percent: 100,
+      });
+      opts?.onProgress?.({
+        phase: "indexing",
+        total: indexWorkTotal,
+        completed: indexWorkCompleted,
+        failed: 0,
+        skipped: 0,
+        percent: 100,
       });
       evictWikiDb(name); // 丢弃可能持旧快照的读连接
 

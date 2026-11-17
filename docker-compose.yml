@@ -45,8 +45,8 @@ services:
     environment:
       KNOWLEDGE_DATA_DIR: /app/data
       KNOWLEDGE_DB_PATH: /app/data/knowledge.db
-      # This URL is handed to Codex in its knowledge-tool recipes, so it must
-      # be reachable from every Codex machine and must include /v3.
+      # This URL is handed to Codex and is used by Swagger "Try it out".
+      # It must be reachable from clients and include /v3.
       KNOWLEDGE_PUBLIC_BASE_URL: "${TDAI_KNOWLEDGE_EXTERNAL_URL:-http://${TDAI_PUBLIC_HOST:-172.30.1.251}:${TDAI_KNOWLEDGE_HOST_PORT:-8421}/v3}"
       # The callback stays on the private Docker network.
       TMC_CALLBACK_URL: "http://memory-panel:8123"
