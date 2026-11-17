@@ -662,10 +662,23 @@ export async function runIngestIncremental(
 
   let completed = 0;
   let failed = 0;
+  let started = 0;
+  const activeSources = new Set<string>();
+  const extractingStartedAt = Date.now();
 
   const tasks = toIngestDisk.map((d) =>
     wikiLimit(async () => {
       const t0 = Date.now();
+      started++;
+      activeSources.add(d.filename);
+      log.info("runIngest 单源抽取开始", {
+        source: d.filename,
+        started: `${started}/${toIngestDisk.length}`,
+        completed: completed + failed,
+        total: toIngestDisk.length,
+        active: activeSources.size,
+        queued: Math.max(0, toIngestDisk.length - completed - failed - activeSources.size),
+      });
       try {
         const candidates = await withSpan("ingest-source", async (span) => {
           span.setAttribute("source.name", d.filename);
@@ -716,11 +729,31 @@ export async function runIngestIncremental(
           candidates: new Map<string, string>(),
           error: String(err),
         };
+      } finally {
+        activeSources.delete(d.filename);
       }
     }),
   );
 
+  const heartbeatTimer = toIngestDisk.length > 0
+    ? setInterval(() => {
+        const finished = completed + failed;
+        const active = [...activeSources];
+        log.info("runIngest 抽取仍在进行", {
+          progress: `${finished}/${toIngestDisk.length}`,
+          completed,
+          total: toIngestDisk.length,
+          failed,
+          activeCount: active.length,
+          activeSources: active,
+          queued: Math.max(0, toIngestDisk.length - finished - active.length),
+          elapsedMs: Date.now() - extractingStartedAt,
+        });
+      }, 30_000)
+    : undefined;
+  heartbeatTimer?.unref?.();
   const extractResults = await Promise.all(tasks);
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
 
   // ── 已删源级联清理（与现有逻辑对齐）──
   if (deleted.length > 0) {
