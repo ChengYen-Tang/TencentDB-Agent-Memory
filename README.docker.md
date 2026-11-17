@@ -83,13 +83,23 @@ docker run -d --name agent-memory \
 ```bash
 cd TencentDB-Agent-Memory
 cp .env.example .env
-# 编辑 .env，填写两组 LLM 与 TDAI_GATEWAY_API_KEY
+# 编辑 .env，填写对外 IP、两组 LLM 与 TDAI_GATEWAY_API_KEY
 docker compose up --build -d
 ```
 
 该命令会启动四个服务：MemoryCore Gateway、Codex Memory Proxy、MemoryKnowledge
 （Wiki / Code Graph / Knowledge Map）及 MemoryPanel 管理界面。已按 Linux 主机 `172.30.1.251` 设为对外可访问：
 Proxy `:8317`、Panel `:8123`、Knowledge `:8421`。Gateway `:8420` 只留在 Docker 内网，不会发布到主机。
+
+一般部署只需修改 `.env`：`TDAI_PUBLIC_HOST` 是其他机器访问 Docker 主机时使用的 IP 或 DNS，
+三个 `TDAI_*_HOST_PORT` 分别控制 Panel、Proxy、Knowledge 的端口。Proxy 和 Knowledge 的对外地址会
+根据主机与端口自动生成；使用 HTTPS 反向代理时，可分别设置 `TDAI_PROXY_EXTERNAL_URL` 和
+`TDAI_KNOWLEDGE_EXTERNAL_URL`（后者须以 `/v3` 结尾）。修改 `.env` 后运行 `docker compose up -d`。
+
+内部模型、API 地址、密钥与推理强度通过 `TDAI_INTERNAL_LLM_*` 配置，Gateway 与 Wiki 共用。
+`TDAI_INTERNAL_LLM_MAX_TOKENS` 控制模型输出 token 上限，而不是 context window；设置后两者共用此值。
+该项未设置时，两者继续读取 `MemoryCore/tdai-gateway.standalone.yaml` 的 `llm.maxTokens`，以兼容旧部署。
+如果之前在 YAML 里设过此值，迁移到 `.env` 时请填入相同值。可选的 Wiki embedding 模型与地址也在 `.env.example` 中。
 
 两条路径是物理隔离的：
 
@@ -105,13 +115,12 @@ Gateway 与 MemoryKnowledge 两个内部容器，不会进入 Proxy。`TDAI_GATE
 Compose 默认也会启用 Skill：Core 会以内部 LLM 从归档对话提炼可复用的工作流程，
 Proxy 则向 Codex 注入 Skill 的搜索和读取能力。Skill 使用本地 SQLite / 文件存储和
 单 worker；主 Codex 模型默认只能读取 Skill，不能在普通对话中直接修改共享 Skill。
-`TDAI_PROXY_EXTERNAL_URL` 是注入给 Codex Bash 工具的本机 Proxy 地址，默认
-`http://127.0.0.1:8096`；若 Codex 在另一台机器运行，改为其可访问的反向代理地址。
+注入给 Codex Bash 工具的 Proxy 地址默认由 `TDAI_PUBLIC_HOST` 与 `TDAI_PROXY_HOST_PORT` 生成。
 
 Wiki 会使用与 MemoryCore 相同的 `TDAI_INTERNAL_LLM_*` 帐号与模型将文件整理成页面、全文索引和 Knowledge Map；
 Code Graph 则只做 Git 仓库的静态索引，不会消耗 LLM 或 embedding 额度。两者建立后会由 Proxy 注入给 Codex 的
-Knowledge 工具。三個對外端口已直接绑定 `0.0.0.0`；若改用 HTTPS 反代或主機 IP 改變，再以
-`TDAI_PROXY_EXTERNAL_URL` 與 `TDAI_KNOWLEDGE_EXTERNAL_URL` 覆寫即可。Code Graph 定期同步默认关闭，需要时可设
+Knowledge 工具。三个对外端口默认绑定 `0.0.0.0`；需要限制绑定地址时，可设置 `.env.example` 中列出的
+`TDAI_*_BIND_ADDRESS`。Code Graph 定期同步默认关闭，需要时可设
 `TDAI_KNOWLEDGE_AUTO_SYNC_ENABLED=true`。
 
 Codex 端仍须使用自己的记忆身份 key（`sk-mem-*`），它与上游 LLM key 不同：
@@ -125,7 +134,7 @@ model_reasoning_effort = "high"
 [model_providers.tdai-proxy]
 name = "TDAI Memory Proxy"
 wire_api = "responses"
-base_url = "http://127.0.0.1:8096/codex/default"
+base_url = "http://172.30.1.251:8317/codex/default"
 experimental_bearer_token = "sk-mem-<你的使用者身份 key>"
 ```
 

@@ -164,7 +164,8 @@ function sharedGatewayMaxTokens(): number | undefined {
 
 function resolvedLlmMaxTokens(): number {
   // Keep the standalone service's explicit LLM_MAX_TOKENS override intact.
-  // The root Compose deployment leaves it unset so both services share YAML.
+  // Root Compose passes the same optional value to Gateway and Knowledge;
+  // when unset both services fall back to llm.maxTokens in the shared YAML.
   if (process.env.LLM_MAX_TOKENS) return envInt("LLM_MAX_TOKENS", 32768);
   return sharedGatewayMaxTokens() ?? 32768;
 }
